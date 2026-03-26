@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useFlashcard } from '@/context/FlashcardContext';
+import { useFlashcard, isEnglishWord } from '@/context/FlashcardContext';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -94,50 +94,26 @@ export function FlashcardCard() {
     [isSpeaking, isSpeechSupported, currentWord, getEnglishVoice],
   );
 
-  if (!currentWord || totalWords === 0) {
-    if (searchTerm) {
-      return (
-        <div className="flex items-center justify-center min-h-[320px] sm:min-h-[380px] w-full">
-          <Card className="w-full max-w-lg p-8 text-center bg-indigo-50/50 dark:bg-indigo-950/20 backdrop-blur-sm border-dashed border-2 border-indigo-200">
-            <p className="text-indigo-600 dark:text-indigo-400 text-lg font-semibold">
-              🔍 Không tìm thấy từ vựng phù hợp.
-            </p>
-            <p className="text-muted-foreground text-sm mt-2">
-              Hãy thử tìm bằng phân loại, định nghĩa hoặc từ khóa khác nhé.
-            </p>
-          </Card>
-        </div>
-      );
-    }
-    return (
-      <div className="flex items-center justify-center min-h-[320px] sm:min-h-[380px]">
-        <Card className="w-full max-w-lg p-8 text-center bg-card/80 backdrop-blur-sm border-dashed border-2">
-          <p className="text-muted-foreground text-lg">
-            📚 Chưa có dữ liệu từ vựng.
-          </p>
-          <p className="text-muted-foreground text-sm mt-2">
-            Hãy import file Excel hoặc tải template mẫu để bắt đầu học!
-          </p>
-        </Card>
-      </div>
-    );
-  }
-
-  const handleFlip = () => setIsFlipped(!isFlipped);
+  const handleFlip = useCallback(() => setIsFlipped((prev) => !prev), []);
 
   // Determine what shows on front and back based on preference
   const shouldShowBack = showVietnameseFirst ? !isFlipped : isFlipped;
 
-  const handleAudioClick = async (e?: React.MouseEvent | KeyboardEvent) => {
+  const handleAudioClick = useCallback(async (e?: React.MouseEvent | KeyboardEvent) => {
     if (e && e.stopPropagation) e.stopPropagation();
 
     if (!currentWord || !currentWord.english) return;
+
+    // Kiểm tra từ có phải tiếng Anh hợp lệ không — tránh gọi API với ký tự đặc biệt
+    if (!isEnglishWord(currentWord.english)) {
+      toast.warning(`Không tìm thấy phát âm cho "${currentWord.english}".`);
+      return;
+    }
 
     setIsAudioLoading(true);
 
     try {
       const wordId = currentWord.english.trim().toLowerCase();
-      console.log(`[${wordId}]`);
       const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(wordId)}`;
 
       const response = await fetch(url);
@@ -173,8 +149,14 @@ export function FlashcardCard() {
     } finally {
       setIsAudioLoading(false);
     }
-  };
+  }, [currentWord]);
 
+  /**
+   * ĐẶT TẤT CẢ HOOKS TRƯỚC CÁC LỆNH RETURN SỚM (early returns).
+   * React yêu cầu hooks phải được gọi cùng thứ tự trong mỗi lần render.
+   * Nếu đặt useEffect sau early return, khi component return sớm sẽ bỏ qua
+   * hook → vi phạm Rules of Hooks → crash ứng dụng (blank screen).
+   */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Do not trigger if typing in an input
@@ -201,6 +183,36 @@ export function FlashcardCard() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleFlip, handleAudioClick, handleSpeak]);
+
+  // ─── EARLY RETURNS (sau khi tất cả hooks đã được khai báo) ───
+  if (!currentWord || totalWords === 0) {
+    if (searchTerm) {
+      return (
+        <div className="flex items-center justify-center min-h-[320px] sm:min-h-[380px] w-full">
+          <Card className="w-full max-w-lg p-8 text-center bg-indigo-50/50 dark:bg-indigo-950/20 backdrop-blur-sm border-dashed border-2 border-indigo-200">
+            <p className="text-indigo-600 dark:text-indigo-400 text-lg font-semibold">
+              🔍 Không tìm thấy từ vựng phù hợp.
+            </p>
+            <p className="text-muted-foreground text-sm mt-2">
+              Hãy thử tìm bằng phân loại, định nghĩa hoặc từ khóa khác nhé.
+            </p>
+          </Card>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-center min-h-[320px] sm:min-h-[380px]">
+        <Card className="w-full max-w-lg p-8 text-center bg-card/80 backdrop-blur-sm border-dashed border-2">
+          <p className="text-muted-foreground text-lg">
+            📚 Chưa có dữ liệu từ vựng.
+          </p>
+          <p className="text-muted-foreground text-sm mt-2">
+            Hãy import file Excel hoặc tải template mẫu để bắt đầu học!
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div

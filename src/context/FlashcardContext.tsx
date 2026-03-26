@@ -3,6 +3,15 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 import type { FlashcardSheet, FlashcardWord } from '@/types/flashcard';
 import { toast } from 'sonner';
 
+/**
+ * Kiểm tra xem từ có phải là từ tiếng Anh hợp lệ hay không.
+ * Chấp nhận: A-Z, a-z, số, dấu cách, dấu gạch ngang, dấu nháy đơn.
+ * Từ chối: ký tự có dấu, tiếng Việt, ký tự đặc biệt khác.
+ */
+export function isEnglishWord(text: string): boolean {
+  return /^[A-Za-z0-9\s'\-.,!?]+$/.test(text.trim());
+}
+
 // ─── Context Value Type ─────────────────────────────────────────────
 interface FlashcardContextValue {
   sheets: FlashcardSheet[];
@@ -181,6 +190,15 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
        return;
     }
 
+    // Bỏ qua API call nếu từ không phải tiếng Anh (có dấu, tiếng Việt, v.v.)
+    if (!isEnglishWord(currentWord.english)) {
+      timeoutRef.current = setTimeout(() => {
+        if (hasNext) nextWord();
+        else setIsAutoReading(false);
+      }, 1500 + flashcardBreakTime * 1000);
+      return;
+    }
+
     try {
       const wordId = currentWord.english.trim().toLowerCase();
       const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(wordId)}`;
@@ -197,9 +215,12 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
       if (audioUrl) {
          const audio = new Audio(audioUrl);
          audioRef.current = audio;
-         audio.play().catch(e => {
-            console.error(e);
-            throw new Error('Play blocked');
+         audio.play().catch(() => {
+            // Trình duyệt chặn phát âm thanh — bỏ qua và chuyển từ tiếp theo
+            timeoutRef.current = setTimeout(() => {
+               if (hasNext) nextWord();
+               else setIsAutoReading(false);
+            }, 1500 + flashcardBreakTime * 1000);
          });
          audio.onended = () => {
             timeoutRef.current = setTimeout(() => {
@@ -207,8 +228,12 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
                else setIsAutoReading(false);
             }, flashcardBreakTime * 1000);
          };
+         // Sửa lỗi: KHÔNG throw bên trong event handler — xử lý gracefully thay vì crash
          audio.onerror = () => {
-            throw new Error('Audio error');
+            timeoutRef.current = setTimeout(() => {
+               if (hasNext) nextWord();
+               else setIsAutoReading(false);
+            }, 1500 + flashcardBreakTime * 1000);
          };
       } else {
          throw new Error('No audio link');
