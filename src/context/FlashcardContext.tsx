@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useState, useMemo, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useCallback, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import type { FlashcardSheet, FlashcardWord } from '@/types/flashcard';
 import { toast } from 'sonner';
@@ -28,6 +28,12 @@ interface FlashcardContextValue {
 
   hasNext: boolean;
   hasPrev: boolean;
+
+  isAutoReading: boolean;
+  flashcardBreakTime: number;
+  setFlashcardBreakTime: (val: number) => void;
+  toggleAutoRead: () => void;
+  stopAutoReading: () => void;
 }
 
 const FlashcardContext = createContext<FlashcardContextValue | null>(null);
@@ -133,6 +139,100 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
     });
   }, [setSheets]);
 
+  // --- Auto Read Logic ---
+  const [flashcardBreakTime, setFlashcardBreakTime] = useLocalStorage<number>('fc-flashcard-break', 0);
+  const [isAutoReading, setIsAutoReading] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const clearAutoReadIntervals = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+  }, []);
+
+  const stopAutoReading = useCallback(() => {
+    if (isAutoReading) {
+      setIsAutoReading(false);
+      clearAutoReadIntervals();
+    }
+  }, [isAutoReading, clearAutoReadIntervals]);
+
+  const toggleAutoRead = useCallback(() => {
+    if (isAutoReading) {
+      stopAutoReading();
+    } else {
+      if (!hasNext) {
+         toast.info('Bạn đã ở thẻ cuối cùng!');
+         return;
+      }
+      setIsAutoReading(true);
+    }
+  }, [isAutoReading, stopAutoReading, hasNext]);
+
+  const playWordAndAdvance = useCallback(async () => {
+    if (!currentWord || !currentWord.english) {
+       timeoutRef.current = setTimeout(() => {
+         if (hasNext) nextWord();
+         else setIsAutoReading(false);
+       }, 2000 + flashcardBreakTime * 1000);
+       return;
+    }
+
+    try {
+      const wordId = currentWord.english.trim().toLowerCase();
+      const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(wordId)}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Not found');
+      
+      const data = await response.json();
+      const phonetics = data[0]?.phonetics || [];
+      const audioObj = phonetics.find((p: any) => p.audio && p.audio.includes('-us.mp3'))
+        || phonetics.find((p: any) => p.audio);
+      const audioUrl = audioObj?.audio;
+
+      if (audioUrl) {
+         const audio = new Audio(audioUrl);
+         audioRef.current = audio;
+         audio.play().catch(e => {
+            console.error(e);
+            throw new Error('Play blocked');
+         });
+         audio.onended = () => {
+            timeoutRef.current = setTimeout(() => {
+               if (hasNext) nextWord();
+               else setIsAutoReading(false);
+            }, flashcardBreakTime * 1000);
+         };
+         audio.onerror = () => {
+            throw new Error('Audio error');
+         };
+      } else {
+         throw new Error('No audio link');
+      }
+
+    } catch (e) {
+      timeoutRef.current = setTimeout(() => {
+        if (hasNext) nextWord();
+        else setIsAutoReading(false);
+      }, 1500 + flashcardBreakTime * 1000);
+    }
+  }, [currentWord, flashcardBreakTime, hasNext, nextWord]);
+
+  useEffect(() => {
+    if (isAutoReading) {
+       clearAutoReadIntervals();
+       playWordAndAdvance();
+    }
+  }, [currentWordIndex, isAutoReading, playWordAndAdvance, clearAutoReadIntervals]);
+
+  useEffect(() => {
+    return () => clearAutoReadIntervals();
+  }, [clearAutoReadIntervals]);
+
   return (
     <FlashcardContext.Provider
       value={{
@@ -155,6 +255,11 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
         setSearchTerm,
         hasNext,
         hasPrev,
+        isAutoReading,
+        flashcardBreakTime,
+        setFlashcardBreakTime,
+        toggleAutoRead,
+        stopAutoReading,
       }}
     >
       {children}

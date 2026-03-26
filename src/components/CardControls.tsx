@@ -12,11 +12,13 @@ export function CardControls() {
     shuffleWords,
     hasNext,
     hasPrev,
+    stopAutoReading,
   } = useFlashcard();
 
   if (totalWords === 0) return null;
 
   const handleNext = () => {
+    stopAutoReading();
     if (hasNext) {
       nextWord();
     } else {
@@ -24,7 +26,13 @@ export function CardControls() {
     }
   };
 
+  const handlePrev = () => {
+    stopAutoReading();
+    prevWord();
+  };
+
   const handleShuffle = () => {
+    stopAutoReading();
     shuffleWords();
     toast.success('🔀 Đã xáo trộn thứ tự từ vựng!');
   };
@@ -58,7 +66,7 @@ export function CardControls() {
         <Button
           variant="outline"
           size="lg"
-          onClick={prevWord}
+          onClick={handlePrev}
           disabled={!hasPrev}
           className="gap-2"
         >

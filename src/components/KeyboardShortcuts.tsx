@@ -24,10 +24,18 @@ export function KeyboardShortcutsHint() {
   if (totalWords === 0) return null;
 
   return (
-    <p className="text-xs text-muted-foreground text-center mt-2">
-      💡 Dùng phím <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">←</kbd>{' '}
-      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">→</kbd> để điều hướng
-      &bull; Nhấn vào thẻ để lật
-    </p>
+    <div className="text-xs text-muted-foreground text-center mt-2 space-y-1">
+      <p>
+        💡 <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">←</kbd>{' '}
+        <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">→</kbd> điều hướng
+        <span className="mx-2">&bull;</span>
+        <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">Space</kbd> lật thẻ
+      </p>
+      <p>
+        <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">Enter</kbd> đọc từ vựng
+        <span className="mx-2">&bull;</span>
+        <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">Shift</kbd> đọc ví dụ
+      </p>
+    </div>
   );
 }

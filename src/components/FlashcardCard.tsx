@@ -58,8 +58,8 @@ export function FlashcardCard() {
    * Clicking while speaking will stop playback.
    */
   const handleSpeak = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation(); // Prevent card flip
+    (e?: React.MouseEvent | KeyboardEvent) => {
+      if (e && e.stopPropagation) e.stopPropagation(); // Prevent card flip
 
       if (!isSpeechSupported || !currentWord?.exampleEnglish) return;
 
@@ -128,8 +128,8 @@ export function FlashcardCard() {
   // Determine what shows on front and back based on preference
   const shouldShowBack = showVietnameseFirst ? !isFlipped : isFlipped;
 
-  const handleAudioClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleAudioClick = async (e?: React.MouseEvent | KeyboardEvent) => {
+    if (e && e.stopPropagation) e.stopPropagation();
 
     if (!currentWord || !currentWord.english) return;
 
@@ -174,6 +174,33 @@ export function FlashcardCard() {
       setIsAudioLoading(false);
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not trigger if typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        handleFlip();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAudioClick(e);
+      } else if (e.key === 'Shift') {
+        e.preventDefault();
+        handleSpeak(e);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleFlip, handleAudioClick, handleSpeak]);
 
   return (
     <div

@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Shuffle, Loader2, Music, ListMusic, Layers, ListOrdered, Repeat, Repeat1, ChevronsRight, ChevronsLeft } from 'lucide-react';
 import { getLocalAudioFiles } from '@/lib/localAudio';
 import type { AudioFile } from '@/lib/localAudio';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -25,7 +27,23 @@ export function AudioPlayer() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   
+  const [audioBreakTime, setAudioBreakTime] = useLocalStorage<number>('fc-audio-break', 0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  const clearPendingTimeout = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
 
   const loadFiles = useCallback(() => {
     try {
@@ -57,6 +75,7 @@ export function AudioPlayer() {
   }, [allFiles, activeSession]);
 
   const handleSessionChange = (val: string) => {
+    clearPendingTimeout();
     setActiveSession(val);
     if (isPlaying && audioRef.current) {
       audioRef.current.pause();
@@ -68,6 +87,7 @@ export function AudioPlayer() {
   };
 
   const startPlaybackMode = (sessionVal: string, mode: PlayMode) => {
+    clearPendingTimeout();
     if (isPlaying && audioRef.current) audioRef.current.pause();
     setIsPlaying(false);
     
@@ -88,6 +108,7 @@ export function AudioPlayer() {
   const currentFile = currentIndex >= 0 ? filteredFiles[currentIndex] : null;
 
   const skipToNextSession = () => {
+    clearPendingTimeout();
     if (activeSession !== 'All' || filteredFiles.length === 0 || !currentFile) return;
     const currentSessIndex = sessions.indexOf(currentFile.session);
     const nextSessionName = currentSessIndex >= 0 && currentSessIndex < sessions.length - 1 ? sessions[currentSessIndex + 1] : sessions[0];
@@ -96,6 +117,7 @@ export function AudioPlayer() {
   };
 
   const skipToPrevSession = () => {
+    clearPendingTimeout();
     if (activeSession !== 'All' || filteredFiles.length === 0 || !currentFile) return;
     const currentSessIndex = sessions.indexOf(currentFile.session);
     const prevSessionName = currentSessIndex > 0 ? sessions[currentSessIndex - 1] : sessions[sessions.length - 1];
@@ -104,12 +126,20 @@ export function AudioPlayer() {
   };
 
   const playNext = useCallback((isAuto = false) => {
+    clearPendingTimeout();
     if (filteredFiles.length === 0) return;
     
     if (isAuto && playMode === 'LOOP') {
-       if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play();
+       const triggerLoop = () => {
+         if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play().catch(e => console.error(e));
+         }
+       };
+       if (audioBreakTime > 0) {
+         timeoutRef.current = setTimeout(triggerLoop, audioBreakTime * 1000);
+       } else {
+         triggerLoop();
        }
        return;
     }
@@ -124,16 +154,24 @@ export function AudioPlayer() {
       nextIndex = (currentIndex + 1) % filteredFiles.length;
     }
     
-    setCurrentIndex(nextIndex);
-  }, [filteredFiles.length, currentIndex, playMode]);
+    if (isAuto && audioBreakTime > 0) {
+      timeoutRef.current = setTimeout(() => {
+        setCurrentIndex(nextIndex);
+      }, audioBreakTime * 1000);
+    } else {
+      setCurrentIndex(nextIndex);
+    }
+  }, [filteredFiles.length, currentIndex, playMode, audioBreakTime, clearPendingTimeout]);
 
   const playPrevious = () => {
+    clearPendingTimeout();
     if (filteredFiles.length === 0) return;
     const prevIndex = currentIndex <= 0 ? filteredFiles.length - 1 : currentIndex - 1;
     setCurrentIndex(prevIndex);
   };
 
   const togglePlaySync = () => {
+    clearPendingTimeout();
     if (currentIndex === -1 && filteredFiles.length > 0) {
       setCurrentIndex(0);
       return;
@@ -238,6 +276,17 @@ export function AudioPlayer() {
                    ))}
                  </SelectContent>
                </Select>
+             </div>
+
+             <div className="flex flex-col gap-1 w-full sm:w-auto">
+               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Nghỉ (giây)</label>
+               <Input 
+                 type="number" 
+                 min={0}
+                 className="w-full sm:w-[90px]" 
+                 value={audioBreakTime} 
+                 onChange={(e) => setAudioBreakTime(Math.max(0, Number(e.target.value)))} 
+               />
              </div>
 
              <div className="flex flex-col gap-1 w-full sm:w-auto">
@@ -480,7 +529,10 @@ export function AudioPlayer() {
               {filteredFiles.map((file, index) => (
                 <button
                   key={file.id}
-                  onClick={() => setCurrentIndex(index)}
+                  onClick={() => {
+                    clearPendingTimeout();
+                    setCurrentIndex(index);
+                  }}
                   className={cn(
                     "flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg text-left transition-all hover:bg-muted group w-full",
                     currentIndex === index 
