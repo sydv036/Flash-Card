@@ -8,7 +8,7 @@ import { Loader2, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function FlashcardCard() {
-  const { currentWord, showVietnameseFirst, totalWords } = useFlashcard();
+  const { currentWord, showVietnameseFirst, totalWords, searchTerm } = useFlashcard();
   const [isFlipped, setIsFlipped] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
 
@@ -95,6 +95,20 @@ export function FlashcardCard() {
   );
 
   if (!currentWord || totalWords === 0) {
+    if (searchTerm) {
+      return (
+        <div className="flex items-center justify-center min-h-[320px] sm:min-h-[380px] w-full">
+          <Card className="w-full max-w-lg p-8 text-center bg-indigo-50/50 dark:bg-indigo-950/20 backdrop-blur-sm border-dashed border-2 border-indigo-200">
+            <p className="text-indigo-600 dark:text-indigo-400 text-lg font-semibold">
+              🔍 Không tìm thấy từ vựng phù hợp.
+            </p>
+            <p className="text-muted-foreground text-sm mt-2">
+              Hãy thử tìm bằng phân loại, định nghĩa hoặc từ khóa khác nhé.
+            </p>
+          </Card>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center min-h-[320px] sm:min-h-[380px]">
         <Card className="w-full max-w-lg p-8 text-center bg-card/80 backdrop-blur-sm border-dashed border-2">

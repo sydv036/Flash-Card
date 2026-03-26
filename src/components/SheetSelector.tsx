@@ -25,6 +25,7 @@ export function SheetSelector() {
           <SelectValue placeholder="Chọn buổi học" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="-1">Tất cả buổi học (Tổng hợp)</SelectItem>
           {sheets.map((sheet, index) => (
             <SelectItem key={index} value={String(index)}>
               {sheet.name} ({sheet.words.length} từ)
