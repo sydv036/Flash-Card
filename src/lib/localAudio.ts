@@ -31,12 +31,12 @@ export function getLocalAudioFiles(): AudioFile[] {
       session: sessionName
     };
   });
-
-  // Sort files nicely
+  
+  // Sort files numerically using natural sorting (case-insensitive, Vietnamese locale)
   return files.sort((a, b) => {
     if (a.session === b.session) {
-      return a.name.localeCompare(b.name);
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'vi', { numeric: true });
     }
-    return a.session.localeCompare(b.session);
+    return a.session.toLowerCase().localeCompare(b.session.toLowerCase(), 'vi', { numeric: true });
   });
 }

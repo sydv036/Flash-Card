@@ -66,7 +66,9 @@ export function AudioPlayer() {
   const sessions = useMemo(() => {
     const sessionSet = new Set<string>();
     allFiles.forEach(f => sessionSet.add(f.session));
-    return Array.from(sessionSet).sort();
+    return Array.from(sessionSet).sort((a, b) => 
+      a.toLowerCase().localeCompare(b.toLowerCase(), 'vi', { numeric: true })
+    );
   }, [allFiles]);
 
   const filteredFiles = useMemo(() => {
@@ -211,9 +213,14 @@ export function AudioPlayer() {
         .catch(err => {
           console.error("Auto-play blocked or failed", err);
           setIsPlaying(false);
-          toast.error("Could not play selected audio");
+          toast.error(`Không thể phát: ${filteredFiles[currentIndex].name}. Đang bỏ qua...`);
+          clearPendingTimeout();
+          timeoutRef.current = setTimeout(() => {
+             playNext(true);
+          }, 1500);
         });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, filteredFiles]);
 
   useEffect(() => {
@@ -223,17 +230,27 @@ export function AudioPlayer() {
     const handleEnded = () => playNext(true);
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
+    const handleError = () => {
+      console.error("Audio playback error");
+      setIsPlaying(false);
+      clearPendingTimeout();
+      timeoutRef.current = setTimeout(() => {
+        playNext(true);
+      }, 1500);
+    };
 
     audioEl.addEventListener('ended', handleEnded);
     audioEl.addEventListener('play', handlePlay);
     audioEl.addEventListener('pause', handlePause);
+    audioEl.addEventListener('error', handleError);
 
     return () => {
       audioEl.removeEventListener('ended', handleEnded);
       audioEl.removeEventListener('play', handlePlay);
       audioEl.removeEventListener('pause', handlePause);
+      audioEl.removeEventListener('error', handleError);
     };
-  }, [playNext]);
+  }, [playNext, clearPendingTimeout]);
 
   const formatTime = (time: number) => {
     if (isNaN(time)) return '00:00';
