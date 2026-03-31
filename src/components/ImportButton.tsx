@@ -136,7 +136,7 @@ export function ImportButton() {
             ) : (
               <BookTemplate className="h-4 w-4 mr-2 text-indigo-600 dark:text-indigo-400" />
             )}
-            {isLoadingTemplate ? 'Đang tải...' : 'Dùng template mẫu'}
+            {isLoadingTemplate ? 'Đang tải...' : 'Dùng Data có sẵn'}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
