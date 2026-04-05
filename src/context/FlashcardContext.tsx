@@ -190,12 +190,53 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
        return;
     }
 
-    // Bỏ qua API call nếu từ không phải tiếng Anh (có dấu, tiếng Việt, v.v.)
+    const fallbackToTTS = () => {
+      if (!('speechSynthesis' in window)) {
+        timeoutRef.current = setTimeout(() => {
+          if (hasNext) nextWord();
+          else setIsAutoReading(false);
+        }, 1500 + flashcardBreakTime * 1000);
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(currentWord.english);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = ['Google UK English Female', 'Google US English'];
+      let voice = null;
+      for (const name of preferred) {
+        const v = voices.find((v) => v.name === name);
+        if (v) { voice = v; break; }
+      }
+      if (!voice) {
+        voice = voices.find((v) => v.lang === 'en-US') || voices.find((v) => v.lang.startsWith('en')) || null;
+      }
+      if (voice) utterance.voice = voice;
+
+      utterance.onend = () => {
+        timeoutRef.current = setTimeout(() => {
+          if (hasNext) nextWord();
+          else setIsAutoReading(false);
+        }, flashcardBreakTime * 1000);
+      };
+
+      utterance.onerror = () => {
+        timeoutRef.current = setTimeout(() => {
+          if (hasNext) nextWord();
+          else setIsAutoReading(false);
+        }, 1500 + flashcardBreakTime * 1000);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    // Nếu từ không phải tiếng Anh thuần (chứa ký tự đặc biệt, tiếng Việt), thay vì gọi API thì dùng TTS
     if (!isEnglishWord(currentWord.english)) {
-      timeoutRef.current = setTimeout(() => {
-        if (hasNext) nextWord();
-        else setIsAutoReading(false);
-      }, 1500 + flashcardBreakTime * 1000);
+      fallbackToTTS();
       return;
     }
 
@@ -204,7 +245,10 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
       const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(wordId)}`;
       
       const response = await fetch(url);
-      if (!response.ok) throw new Error('Not found');
+      if (!response.ok) {
+        fallbackToTTS();
+        return;
+      }
       
       const data = await response.json();
       const phonetics = data[0]?.phonetics || [];
@@ -216,11 +260,8 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
          const audio = new Audio(audioUrl);
          audioRef.current = audio;
          audio.play().catch(() => {
-            // Trình duyệt chặn phát âm thanh — bỏ qua và chuyển từ tiếp theo
-            timeoutRef.current = setTimeout(() => {
-               if (hasNext) nextWord();
-               else setIsAutoReading(false);
-            }, 1500 + flashcardBreakTime * 1000);
+            // Trình duyệt chặn phát âm thanh tự động
+            fallbackToTTS();
          });
          audio.onended = () => {
             timeoutRef.current = setTimeout(() => {
@@ -228,22 +269,15 @@ export function FlashcardProvider({ children }: { children: ReactNode }) {
                else setIsAutoReading(false);
             }, flashcardBreakTime * 1000);
          };
-         // Sửa lỗi: KHÔNG throw bên trong event handler — xử lý gracefully thay vì crash
          audio.onerror = () => {
-            timeoutRef.current = setTimeout(() => {
-               if (hasNext) nextWord();
-               else setIsAutoReading(false);
-            }, 1500 + flashcardBreakTime * 1000);
+            fallbackToTTS();
          };
       } else {
-         throw new Error('No audio link');
+         fallbackToTTS();
       }
 
     } catch (e) {
-      timeoutRef.current = setTimeout(() => {
-        if (hasNext) nextWord();
-        else setIsAutoReading(false);
-      }, 1500 + flashcardBreakTime * 1000);
+      fallbackToTTS();
     }
   }, [currentWord, flashcardBreakTime, hasNext, nextWord]);
 

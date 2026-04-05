@@ -8,9 +8,15 @@ import { Loader2, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function FlashcardCard() {
-  const { currentWord, showVietnameseFirst, totalWords, searchTerm } = useFlashcard();
+  const { currentWord, showVietnameseFirst, totalWords, searchTerm, nextWord, prevWord } = useFlashcard();
   const [isFlipped, setIsFlipped] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+
+  // ─── Swipe Support (touch + mouse drag) ───
+  const touchStartRef = useRef<number | null>(null);
+  const touchEndRef = useRef<number | null>(null);
+  const swipedRef = useRef(false);
+  const isDragging = useRef(false);
 
   // ─── Web Speech API (TTS) state ───
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -94,7 +100,14 @@ export function FlashcardCard() {
     [isSpeaking, isSpeechSupported, currentWord, getEnglishVoice],
   );
 
-  const handleFlip = useCallback(() => setIsFlipped((prev) => !prev), []);
+  const handleFlip = useCallback(() => {
+    // Nếu vừa vuốt xong thì không lật thẻ
+    if (swipedRef.current) {
+      swipedRef.current = false;
+      return;
+    }
+    setIsFlipped((prev) => !prev);
+  }, []);
 
   // Determine what shows on front and back based on preference
   const shouldShowBack = showVietnameseFirst ? !isFlipped : isFlipped;
@@ -112,6 +125,21 @@ export function FlashcardCard() {
 
     setIsAudioLoading(true);
 
+    const playTTS = () => {
+      if (!isSpeechSupported) {
+        toast.error('Trình duyệt không hỗ trợ đọc giọng nói.');
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(currentWord.english);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      const voice = getEnglishVoice();
+      if (voice) utterance.voice = voice;
+      window.speechSynthesis.speak(utterance);
+    };
+
     try {
       const wordId = currentWord.english.trim().toLowerCase();
       const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(wordId)}`;
@@ -119,11 +147,7 @@ export function FlashcardCard() {
       const response = await fetch(url);
 
       if (!response.ok) {
-        if (response.status === 404) {
-          toast.error('Không tìm thấy âm thanh cho từ này (hoặc từ không tồn tại).');
-        } else {
-          toast.error(`Lỗi kết nối (${response.status}): Không thể lấy dữ liệu.`);
-        }
+        playTTS();
         return;
       }
 
@@ -141,15 +165,15 @@ export function FlashcardCard() {
           toast.error('Trình duyệt chặn phát âm thanh tự động.');
         });
       } else {
-        toast.error('Không tìm thấy âm thanh cho từ này.');
+        playTTS();
       }
     } catch (error) {
       console.error('API Error:', error);
-      toast.error('Lỗi kết nối. Vui lòng kiểm tra mạng.');
+      playTTS();
     } finally {
       setIsAudioLoading(false);
     }
-  }, [currentWord]);
+  }, [currentWord, isSpeechSupported, getEnglishVoice]);
 
   /**
    * ĐẶT TẤT CẢ HOOKS TRƯỚC CÁC LỆNH RETURN SỚM (early returns).
@@ -183,6 +207,71 @@ export function FlashcardCard() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleFlip, handleAudioClick, handleSpeak]);
+
+  // Reset lật thẻ khi đổi từ
+  useEffect(() => {
+    setIsFlipped(false);
+  }, [currentWord]);
+
+  // Handle Swipe
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchEndRef.current = null;
+    touchStartRef.current = e.targetTouches[0].clientX;
+    swipedRef.current = false;
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    touchEndRef.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchEnd = () => {
+    if (touchStartRef.current === null || touchEndRef.current === null) return;
+    const distance = touchStartRef.current - touchEndRef.current;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isRightSwipe) {
+      swipedRef.current = true;
+      nextWord();
+    } else if (isLeftSwipe) {
+      swipedRef.current = true;
+      prevWord();
+    }
+  };
+
+  // ─── Mouse Drag (desktop swipe) ───
+  const onMouseDown = (e: React.MouseEvent) => {
+    // Bỏ qua nếu click vào button (phát âm, v.v.)
+    if ((e.target as HTMLElement).closest('button')) return;
+    isDragging.current = true;
+    touchStartRef.current = e.clientX;
+    touchEndRef.current = null;
+    swipedRef.current = false;
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    touchEndRef.current = e.clientX;
+  };
+
+  const onMouseUp = () => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    if (touchStartRef.current === null || touchEndRef.current === null) return;
+    const distance = touchStartRef.current - touchEndRef.current;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isRightSwipe) {
+      swipedRef.current = true;
+      nextWord();
+    } else if (isLeftSwipe) {
+      swipedRef.current = true;
+      prevWord();
+    }
+  };
 
   // ─── EARLY RETURNS (sau khi tất cả hooks đã được khai báo) ───
   if (!currentWord || totalWords === 0) {
@@ -218,6 +307,13 @@ export function FlashcardCard() {
     <div
       className="perspective-[1200px] w-full max-w-lg mx-auto cursor-pointer select-none"
       onClick={handleFlip}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={() => { isDragging.current = false; }}
     >
       <div
         className={`relative w-full min-h-[320px] sm:min-h-[380px] transition-transform duration-700 transform-3d ${shouldShowBack ? 'rotate-y-180' : ''
