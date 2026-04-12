@@ -427,18 +427,37 @@ export function AudioPlayer() {
         <CardContent className="p-6 md:p-8">
           <div className="flex flex-col items-center gap-6">
 
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-              {isPlaying ? (
-                <div className="flex gap-1.5 items-end h-8">
-                  <div className="w-1.5 bg-white rounded-full animate-[bounce_1s_ease-in-out_infinite]" />
-                  <div className="w-1.5 bg-white rounded-full animate-[bounce_1.2s_ease-in-out_infinite_0.1s]" />
-                  <div className="w-1.5 bg-white rounded-full animate-[bounce_0.9s_ease-in-out_infinite_0.2s]" />
-                  <div className="w-1.5 bg-white rounded-full animate-[bounce_1.1s_ease-in-out_infinite_0.3s]" />
+            {currentScriptItem && currentImageUrl ? (
+              <div className="w-full max-w-[320px] aspect-[4/3] rounded-xl bg-white/60 dark:bg-gray-800/60 overflow-hidden border border-indigo-100 dark:border-indigo-900/40 p-2 shadow-sm relative group flex items-center justify-center">
+                <img
+                  src={currentImageUrl}
+                  alt={`Hình ảnh câu ${currentAudioId}`}
+                  className="w-full h-full object-contain transition-all hover:scale-[1.02] cursor-zoom-in"
+                  onClick={() => setIsImageEnlarged(true)}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+                <div className="absolute inset-0 pointer-events-none rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-black/50 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 backdrop-blur-md">
+                    Phóng to
+                  </div>
                 </div>
-              ) : (
-                <Music className="w-10 h-10 text-white" />
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                {isPlaying ? (
+                  <div className="flex gap-1.5 items-end h-8">
+                    <div className="w-1.5 bg-white rounded-full animate-[bounce_1s_ease-in-out_infinite]" />
+                    <div className="w-1.5 bg-white rounded-full animate-[bounce_1.2s_ease-in-out_infinite_0.1s]" />
+                    <div className="w-1.5 bg-white rounded-full animate-[bounce_0.9s_ease-in-out_infinite_0.2s]" />
+                    <div className="w-1.5 bg-white rounded-full animate-[bounce_1.1s_ease-in-out_infinite_0.3s]" />
+                  </div>
+                ) : (
+                  <Music className="w-10 h-10 text-white" />
+                )}
+              </div>
+            )}
 
             <div className="text-center w-full">
               <h2 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-gray-100 truncate flex-1 leading-tight mb-2">
@@ -562,29 +581,12 @@ export function AudioPlayer() {
               </div>
             </div>
 
-            {/* Hiển thị script và ảnh nếu có file script match */}
+            {/* Hiển thị script nếu có file script match */}
             {currentScriptItem && currentSessionNumber !== null && (
-              <div className="w-full flex flex-col lg:flex-row gap-6 mt-6 border-t border-border/50 pt-6 z-10 bg-white/40 dark:bg-black/20 p-4 rounded-xl backdrop-blur-sm">
-                {/* Ảnh bên trái */}
-                <div className="w-full lg:w-5/12 flex flex-col items-center justify-center bg-white/60 dark:bg-gray-800/60 rounded-xl overflow-hidden border border-indigo-100 dark:border-indigo-900/40 p-4 shadow-sm relative group">
-                  <img
-                    src={currentImageUrl || ''}
-                    alt={`Hình ảnh câu ${currentAudioId}`}
-                    className="w-full h-auto object-contain max-h-[350px] rounded-md transition-all hover:scale-[1.02] cursor-zoom-in"
-                    onClick={() => setIsImageEnlarged(true)}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                  <div className="absolute inset-0 pointer-events-none rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="bg-black/50 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 backdrop-blur-md">
-                      Phóng to
-                    </div>
-                  </div>
-                </div>
-
-                {/* Script bên phải */}
-                <div className="w-full lg:w-7/12 flex flex-col gap-3 text-left">
+              <div className="w-full mt-6 border-t border-border/50 pt-6 z-10 bg-white/40 dark:bg-black/20 p-4 md:p-6 rounded-xl backdrop-blur-sm">
+                
+                {/* Nội dung Script */}
+                <div className="w-full flex flex-col gap-3 text-left">
                   <h3 className="font-semibold text-lg text-indigo-700 dark:text-indigo-400 mb-2 flex items-center justify-between">
                     <span>Nội dung bài nghe</span>
                     
