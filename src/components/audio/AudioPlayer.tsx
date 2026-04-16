@@ -33,8 +33,10 @@ export function AudioPlayer() {
 
   // Advanced Controls
   const [playbackRate, setPlaybackRate] = useState<number>(1);
-  const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
+
+  const timeDisplayRef = useRef<HTMLSpanElement>(null);
+  const seekBarRef = useRef<HTMLInputElement>(null);
 
   const [audioBreakTime, setAudioBreakTime] = useLocalStorage<number>('fc-audio-break', 0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,7 +95,8 @@ export function AudioPlayer() {
     }
     setIsPlaying(false);
     setCurrentIndex(-1);
-    setCurrentTime(0);
+    if (timeDisplayRef.current) timeDisplayRef.current.textContent = '00:00';
+    if (seekBarRef.current) seekBarRef.current.value = '0';
     setDuration(0);
   };
 
@@ -142,7 +145,6 @@ export function AudioPlayer() {
 
     // 1. Cắt số buổi ra thêm chữ B => ví dụ: B9
     const targetFolder = `B${currentSessionNumber}`;
-    console.log(`Folder ${targetFolder}`);
 
 
     // 2. Cắt tên audio ra => ví dụ: 2 (từ 2.mp3)
@@ -318,11 +320,23 @@ export function AudioPlayer() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    const time = e.currentTarget.currentTime;
+    if (timeDisplayRef.current) {
+      timeDisplayRef.current.textContent = formatTime(time);
+    }
+    if (seekBarRef.current) {
+      seekBarRef.current.value = time.toString();
+    }
+  };
+
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTime = Number(e.target.value);
-    setCurrentTime(newTime);
     if (audioRef.current) {
       audioRef.current.currentTime = newTime;
+    }
+    if (timeDisplayRef.current) {
+      timeDisplayRef.current.textContent = formatTime(newTime);
     }
   };
 
@@ -478,15 +492,16 @@ export function AudioPlayer() {
             {/* Seek Bar */}
             <div className="w-full max-w-sm mt-2">
               <div className="flex justify-between text-xs text-muted-foreground mb-2 font-medium">
-                <span>{formatTime(currentTime)}</span>
+                <span ref={timeDisplayRef}>00:00</span>
                 <span>{formatTime(duration)}</span>
               </div>
               <input
+                ref={seekBarRef}
                 type="range"
                 min={0}
                 max={duration || 100}
                 step={0.1}
-                value={currentTime}
+                defaultValue={0}
                 onChange={handleSeek}
                 className="w-full h-1.5 bg-indigo-100 dark:bg-indigo-900 rounded-lg appearance-none cursor-pointer accent-indigo-600 outline-none transition-all hover:h-2"
               />
@@ -495,7 +510,7 @@ export function AudioPlayer() {
             <audio
               ref={audioRef}
               className="hidden"
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={(e) => {
                 const audio = e.currentTarget;
                 setDuration(audio.duration);
