@@ -142,6 +142,8 @@ export function AudioPlayer() {
 
     // 1. Cắt số buổi ra thêm chữ B => ví dụ: B9
     const targetFolder = `B${currentSessionNumber}`;
+    console.log(`Folder ${targetFolder}`);
+
 
     // 2. Cắt tên audio ra => ví dụ: 2 (từ 2.mp3)
     // Ở đây currentAudioId chính là số 2 đã được cắt ra từ trước
@@ -426,8 +428,8 @@ export function AudioPlayer() {
       <Card className="border-2 border-indigo-100 dark:border-indigo-900/40 shadow-xl overflow-hidden bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm relative">
         <CardContent className="p-6 md:p-8">
           <div className="flex flex-col items-center gap-6">
-
-            {currentScriptItem && currentImageUrl ? (
+            {/* {currentScriptItem && currentImageUrl ? ( */}
+            {currentImageUrl ? (
               <div className="w-full max-w-[320px] aspect-[4/3] rounded-xl bg-white/60 dark:bg-gray-800/60 overflow-hidden border border-indigo-100 dark:border-indigo-900/40 p-2 shadow-sm relative group flex items-center justify-center">
                 <img
                   src={currentImageUrl}
@@ -584,14 +586,14 @@ export function AudioPlayer() {
             {/* Hiển thị script nếu có file script match */}
             {currentScriptItem && currentSessionNumber !== null && (
               <div className="w-full mt-6 border-t border-border/50 pt-6 z-10 bg-white/40 dark:bg-black/20 p-4 md:p-6 rounded-xl backdrop-blur-sm">
-                
+
                 {/* Nội dung Script */}
                 <div className="w-full flex flex-col gap-3 text-left">
                   <h3 className="font-semibold text-lg text-indigo-700 dark:text-indigo-400 mb-2 flex items-center justify-between">
                     <span>Nội dung bài nghe</span>
-                    
-                    <Button 
-                      variant="outline" 
+
+                    <Button
+                      variant="outline"
                       size="sm"
                       className="h-8 gap-1.5 rounded-full px-4 border-indigo-200 hover:bg-indigo-50 dark:border-indigo-800 dark:hover:bg-indigo-900/50"
                       onClick={() => setShowScriptContent(!showScriptContent)}
@@ -609,7 +611,7 @@ export function AudioPlayer() {
                       )}
                     </Button>
                   </h3>
-                  
+
                   {showScriptContent ? (
                     <div className="flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
                       {currentScriptItem.answers?.map((ans: any, idx: number) => {
@@ -646,7 +648,7 @@ export function AudioPlayer() {
                       })}
                     </div>
                   ) : (
-                    <div 
+                    <div
                       className="flex flex-col items-center justify-center py-12 px-4 bg-muted/20 border-2 border-dashed border-indigo-100 dark:border-indigo-900/40 rounded-xl cursor-pointer hover:bg-muted/40 transition-colors group"
                       onClick={() => setShowScriptContent(true)}
                     >
@@ -743,11 +745,11 @@ export function AudioPlayer() {
 
       {/* Fullscreen Image Overlay */}
       {isImageEnlarged && currentImageUrl && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200"
           onClick={() => setIsImageEnlarged(false)}
         >
-          <button 
+          <button
             className="absolute top-4 right-4 sm:top-6 sm:right-6 w-12 h-12 bg-white/10 hover:bg-white/20 hover:scale-105 rounded-full flex items-center justify-center text-white transition-all shadow-lg"
             onClick={(e) => {
               e.stopPropagation();
@@ -756,10 +758,10 @@ export function AudioPlayer() {
           >
             <X className="w-6 h-6" />
           </button>
-          
-          <img 
-            src={currentImageUrl} 
-            alt="Đã phóng to" 
+
+          <img
+            src={currentImageUrl}
+            alt="Đã phóng to"
             className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl ring-1 ring-white/20 animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           />
