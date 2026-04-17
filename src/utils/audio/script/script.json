@@ -1632,5 +1632,39 @@
         "correctAnswer": "C"
       }
     ]
+  },
+  {
+    "lessonId": 11,
+    "title": "Audio buổi 11",
+    "is_display": true,
+    "items": [
+      {
+        "id": 30,
+        "image": "30.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The people are walking through the forest.",
+            "vi": "Người dân đang đi qua khu rừng."
+          },
+          {
+            "key": "B",
+            "en": "The people are fishing from the riverbank.",
+            "vi": "Người dân đang đánh cá từ bờ sông."
+          },
+          {
+            "key": "C",
+            "en": "The people are taking a walk.",
+            "vi": "Mọi người đang đi dạo."
+          },
+          {
+            "key": "D",
+            "en": "The people are looking at each other.",
+            "vi": "Mọi người đang nhìn nhau."
+          }
+        ],
+        "correctAnswer": "C"
+      }
+    ]
   }
 ]
