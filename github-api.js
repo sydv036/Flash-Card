@@ -112,7 +112,7 @@ export async function commitChanges({ filesToAdd = [], pathsToDelete = [], messa
 
   // Tạo blob theo từng chunk nhỏ để tránh quá tải bộ nhớ và GitHub API rate limit
   const blobEntries = [];
-  const chunkSize = 5; // Xử lý 5 file một lúc
+  const chunkSize = 25; // Nâng giới hạn xử lý song song lên 25 files một lúc để tăng tối đa tốc độ
 
   for (let i = 0; i < filesToAdd.length; i += chunkSize) {
     const chunk = filesToAdd.slice(i, i + chunkSize);
@@ -131,11 +131,6 @@ export async function commitChanges({ filesToAdd = [], pathsToDelete = [], messa
       })
     );
     blobEntries.push(...chunkResults);
-    
-    // Đợi một chút giữa các chunk nếu số lượng file lớn
-    if (i + chunkSize < filesToAdd.length) {
-      await new Promise(res => setTimeout(res, 500));
-    }
   }
 
   let newTreeSha;
