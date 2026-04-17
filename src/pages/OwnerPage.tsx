@@ -819,7 +819,7 @@ function LessonsListSection() {
                   {confirmLesson.is_display ? 'Ẩn buổi học?' : 'Hiển thị buổi học?'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <span className="font-medium text-foreground">{confirmLesson.title}</span>
+                  <span className="font-medium text-foreground">Script {confirmLesson.title}</span>
                   {confirmLesson.is_display
                     ? ' sẽ không hiển thị trong danh sách học.'
                     : ' sẽ xuất hiện trong danh sách học.'}
