@@ -471,8 +471,8 @@ function UploadScriptSection() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-foreground">Hiển thị buổi học</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Bật để hiện buổi này trong danh sách học</p>
+                <p className="text-sm font-semibold text-foreground">Hiển thị script cho bài nghe</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Bật để hiện thị script cho bài nghe trong buổi này</p>
               </div>
               <button
                 id="is-display-toggle"
