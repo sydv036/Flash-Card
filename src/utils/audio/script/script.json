@@ -819,7 +819,7 @@
   {
     "lessonId": 10,
     "title": "Audio buổi 10",
-    "is_display": true,
+    "is_display": false,
     "items": [
       {
         "id": 1,
