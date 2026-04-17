@@ -1632,5 +1632,39 @@
         "correctAnswer": "A"
       }
     ]
+  },
+  {
+    "lessonId": 11,
+    "title": "Audio buổi 11",
+    "is_display": true,
+    "items": [
+      {
+        "id": 1,
+        "image": "1.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "He’s throwing some fish into the water",
+            "vi": "Ông ấy đang thả một vài con cá xuống nước"
+          },
+          {
+            "key": "B",
+            "en": "He’s swimming in the ocean",
+            "vi": "Ông ấy đang bơi trong đại dương"
+          },
+          {
+            "key": "C",
+            "en": "He’s looking over the side of a boat",
+            "vi": "Ông ấy đang nhìn qua phía bên của chiếc thuyền"
+          },
+          {
+            "key": "D",
+            "en": "He’s standing in the water",
+            "vi": "Ông ấy đang đứng trong nước"
+          }
+        ],
+        "correctAnswer": "A"
+      }
+    ]
   }
 ]
