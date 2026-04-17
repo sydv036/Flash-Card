@@ -43,15 +43,15 @@ function UploadAudioSection() {
     setShowConfirm(false);
     setLoading(true);
     let successCount = 0;
-    
+
     try {
       const allFilesList = [
         ...audioFiles.map(f => ({ type: 'audios', file: f })),
         ...imageFiles.map(f => ({ type: 'images', file: f }))
       ];
-      
+
       const BATCH_SIZE = 8; // Giới hạn 8 file mỗi lượt tải để tránh quá tải 4.5MB Payload của Vercel (Lỗi 413 Payload Too Large)
-      
+
       for (let i = 0; i < allFilesList.length; i += BATCH_SIZE) {
         const chunk = allFilesList.slice(i, i + BATCH_SIZE);
         const formData = new FormData();
@@ -62,19 +62,19 @@ function UploadAudioSection() {
 
         // Tuỳ chọn hiển thị tiến trình (tuỳ chọn thêm để biết dang upload tới đâu)
         if (allFilesList.length > BATCH_SIZE && i === 0) {
-          toast.loading(`Bắt đầu tải lên: ${allFilesList.length} files (chia nhỏ để tránh lỗi mạng)`);
+          toast.loading(`Đang upload: ${allFilesList.length} files, vui lòng đợi!`);
         }
 
         const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        
+
         let data;
         try {
           data = await res.json();
-        } catch(e) {
+        } catch (e) {
           throw new Error('Dung lượng block file quá nặng, Vercel từ chối kết nối (Lỗi 413 Payload Too Large). Vui lòng chọn file nhẹ hơn.');
         }
 
-        if (!res.ok || !data.success) throw new Error(data.message || `Lỗi tải lên ở file thứ ${i+1}`);
+        if (!res.ok || !data.success) throw new Error(data.message || `Lỗi tải lên ở file thứ ${i + 1}`);
         successCount += chunk.length;
       }
 
