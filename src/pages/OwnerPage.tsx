@@ -216,7 +216,8 @@ function UploadAudioSection() {
 // ─── Section 2: Script JSON bằng Textarea ────────────────────────────────────
 
 const PROMPT_TEXT = `Vui lòng chuyển dữ liệu các câu hỏi sau thành một mảng JSON (Array) với cấu trúc như sau:
-  {
+[  
+ {
     "id": 1,
     "image": "1.png",
     "answers": [
@@ -233,6 +234,7 @@ const PROMPT_TEXT = `Vui lòng chuyển dữ liệu các câu hỏi sau thành m
     ],
     "correctAnswer": "A"
   }
+]
 Yêu cầu:
 - Trả về CHỈ mảng JSON hợp lệ, không bao gồm code block markdown (không có \`\`\`json).
 - \`image\` có format là "\${id}.png". 
@@ -243,23 +245,25 @@ Là file được tôi đẩy lên.
 `;
 
 const SAMPLE_JSON = `
+[ 
   {
-    "id": 1,
-    "image": "1.png",
-    "answers": [
-      {
-        "key": "A",
-        "en": "The men are putting on headphones.",
-        "vi": "Người đàn ông đang đeo tai nghe."
-      },
-      {
-        "key": "B",
-        "en": "The men are getting up from their chairs.",
-        "vi": "Những người đàn ông đang đứng dậy từ ghế của họ."
-      }
-    ],
-    "correctAnswer": "A"
+      "id": 1,
+      "image": "1.png",
+      "answers": [
+        {
+          "key": "A",
+          "en": "The men are putting on headphones.",
+          "vi": "Người đàn ông đang đeo tai nghe."
+        },
+        {
+          "key": "B",
+          "en": "The men are getting up from their chairs.",
+          "vi": "Những người đàn ông đang đứng dậy từ ghế của họ."
+        }
+      ],
+      "correctAnswer": "A"
   }
+]
 `;
 
 function UploadScriptSection() {
@@ -482,7 +486,7 @@ function UploadScriptSection() {
             </div>
 
             <p className="text-xs text-muted-foreground mb-3">
-              Dán list câu hỏi <code className="bg-muted px-1 rounded text-emerald-600">{'{'}"items": [...]{'}'}</code>
+              Dán list câu hỏi <code className="bg-muted px-1 rounded text-emerald-600">{'[...]'}</code>
             </p>
             <textarea
               id="script-json-textarea"
