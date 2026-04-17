@@ -58,7 +58,7 @@ export function Header() {
               )}
             >
               <Headphones className="w-4 h-4" />
-              Up Audio
+              Upload Audio
             </Link>
           </nav>
         </div>
