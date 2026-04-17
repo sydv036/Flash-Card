@@ -12,7 +12,13 @@ import { toast } from 'sonner';
 
 // Tự động load tất cả các file JSON script từ thư mục script
 const scriptModules = import.meta.glob('@/utils/audio/script/*.json', { eager: true });
-const allScripts: any[] = Object.values(scriptModules).map((mod: any) => mod.default || mod);
+// flatMap: nếu file JSON là array (nhiều lesson) thì trải phẳng, nếu là object đơn thì wrap lại
+const allScripts: any[] = Object.values(scriptModules)
+  .flatMap((mod: any) => {
+    const data = mod.default ?? mod;
+    return Array.isArray(data) ? data : [data];
+  })
+  .filter((lesson) => lesson.is_display !== false);
 
 // Tự động quét tất cả các file hình ảnh trong thư mục src/assets để import tự động
 const imageModules = import.meta.glob('@/assets/**/*.{png,jpg,jpeg,gif,svg,webp}', { eager: true, query: '?url', import: 'default' });
@@ -133,12 +139,16 @@ export function AudioPlayer() {
     return match ? parseInt(match[0], 10) : null;
   }, [currentFile]);
 
+  const currentSessionScript = useMemo(() => {
+    if (currentSessionNumber === null) return null;
+    return allScripts.find(s => s.lessonId === currentSessionNumber) || null;
+  }, [currentSessionNumber]);
+
   const currentScriptItem = useMemo(() => {
-    if (currentSessionNumber === null || currentAudioId === null) return null;
-    const sessionScript = allScripts.find(s => s.lessonId === currentSessionNumber);
-    if (!sessionScript || !sessionScript.items) return null;
-    return sessionScript.items.find((item: any) => item.id === currentAudioId) || null;
-  }, [currentSessionNumber, currentAudioId]);
+    if (!currentSessionScript || currentAudioId === null) return null;
+    if (!currentSessionScript.items) return null;
+    return currentSessionScript.items.find((item: any) => item.id === currentAudioId) || null;
+  }, [currentSessionScript, currentAudioId]);
 
   const currentImageUrl = useMemo(() => {
     if (currentSessionNumber === null || currentAudioId === null) return null;
@@ -598,8 +608,8 @@ export function AudioPlayer() {
               </div>
             </div>
 
-            {/* Hiển thị script nếu có file script match */}
-            {currentScriptItem && currentSessionNumber !== null && (
+            {/* Hiển thị script nếu có file script match và có cờ is_display === true */}
+            {currentScriptItem && currentSessionNumber !== null && currentSessionScript?.is_display === true && (
               <div className="w-full mt-6 border-t border-border/50 pt-6 z-10 bg-white/40 dark:bg-black/20 p-4 md:p-6 rounded-xl backdrop-blur-sm">
 
                 {/* Nội dung Script */}

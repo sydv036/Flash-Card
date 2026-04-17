@@ -24,29 +24,41 @@ export function Header() {
           </Link>
 
           <nav className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-            <Link 
-              to="/" 
+            <Link
+              to="/"
               className={cn(
                 "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                location.pathname === '/' 
-                  ? "bg-background text-foreground shadow-sm" 
+                location.pathname === '/'
+                  ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-background/50"
               )}
             >
               <BookOpen className="w-4 h-4" />
               Cards
             </Link>
-            <Link 
-              to="/audio" 
+            <Link
+              to="/audio"
               className={cn(
                 "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                location.pathname === '/audio' 
-                  ? "bg-background text-foreground shadow-sm" 
+                location.pathname === '/audio'
+                  ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-background/50"
               )}
             >
               <Headphones className="w-4 h-4" />
               Audio
+            </Link>
+            <Link
+              to="/owner"
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                location.pathname === '/owner'
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+              )}
+            >
+              <Headphones className="w-4 h-4" />
+              Up Audio
             </Link>
           </nav>
         </div>
