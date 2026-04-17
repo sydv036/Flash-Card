@@ -42,21 +42,49 @@ function UploadAudioSection() {
   const handleConfirmedUpload = async () => {
     setShowConfirm(false);
     setLoading(true);
+    let successCount = 0;
+    
     try {
-      const formData = new FormData();
-      formData.append('session', session);
-      audioFiles.forEach(f => formData.append('audios', f));
-      imageFiles.forEach(f => formData.append('images', f));
+      const allFilesList = [
+        ...audioFiles.map(f => ({ type: 'audios', file: f })),
+        ...imageFiles.map(f => ({ type: 'images', file: f }))
+      ];
+      
+      const BATCH_SIZE = 8; // Giới hạn 8 file mỗi lượt tải để tránh quá tải 4.5MB Payload của Vercel (Lỗi 413 Payload Too Large)
+      
+      for (let i = 0; i < allFilesList.length; i += BATCH_SIZE) {
+        const chunk = allFilesList.slice(i, i + BATCH_SIZE);
+        const formData = new FormData();
+        formData.append('session', session);
+        chunk.forEach(item => {
+          formData.append(item.type, item.file);
+        });
 
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Tải lên thất bại');
+        // Tuỳ chọn hiển thị tiến trình (tuỳ chọn thêm để biết dang upload tới đâu)
+        if (allFilesList.length > BATCH_SIZE && i === 0) {
+          toast.loading(`Bắt đầu tải lên: ${allFilesList.length} files (chia nhỏ để tránh lỗi mạng)`);
+        }
 
-      toast.success(data.message);
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        
+        let data;
+        try {
+          data = await res.json();
+        } catch(e) {
+          throw new Error('Dung lượng block file quá nặng, Vercel từ chối kết nối (Lỗi 413 Payload Too Large). Vui lòng chọn file nhẹ hơn.');
+        }
+
+        if (!res.ok || !data.success) throw new Error(data.message || `Lỗi tải lên ở file thứ ${i+1}`);
+        successCount += chunk.length;
+      }
+
+      toast.dismiss();
+      toast.success(`Hoàn tất tải lên ${successCount} files cho buổi ${session}!`);
       setSession(''); setAudioFiles([]); setImageFiles([]);
       if (audioInputRef.current) audioInputRef.current.value = '';
       if (imageInputRef.current) imageInputRef.current.value = '';
     } catch (err: any) {
+      toast.dismiss();
       toast.error(err.message || 'Đã có lỗi xảy ra');
     } finally {
       setLoading(false);
