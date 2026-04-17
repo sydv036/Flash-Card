@@ -110,21 +110,33 @@ export async function commitChanges({ filesToAdd = [], pathsToDelete = [], messa
   const headCommit = await getCommitData(headSha);
   const baseTreeSha = headCommit.tree.sha;
 
-  // Tạo blob song song để tiết kiệm thời gian
-  const blobEntries = await Promise.all(
-    filesToAdd.map(async (file) => {
-      let blobSha;
-      if (file.encoding === 'utf-8' || file.encoding === 'utf8') {
-        blobSha = await createBlob(file.content, 'utf-8');
-      } else {
-        const b64 = Buffer.isBuffer(file.content)
-          ? file.content.toString('base64')
-          : file.content;
-        blobSha = await createBlob(b64, 'base64');
-      }
-      return { path: file.path, mode: '100644', type: 'blob', sha: blobSha };
-    })
-  );
+  // Tạo blob theo từng chunk nhỏ để tránh quá tải bộ nhớ và GitHub API rate limit
+  const blobEntries = [];
+  const chunkSize = 5; // Xử lý 5 file một lúc
+
+  for (let i = 0; i < filesToAdd.length; i += chunkSize) {
+    const chunk = filesToAdd.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(
+      chunk.map(async (file) => {
+        let blobSha;
+        if (file.encoding === 'utf-8' || file.encoding === 'utf8') {
+          blobSha = await createBlob(file.content, 'utf-8');
+        } else {
+          const b64 = Buffer.isBuffer(file.content)
+            ? file.content.toString('base64')
+            : file.content;
+          blobSha = await createBlob(b64, 'base64');
+        }
+        return { path: file.path, mode: '100644', type: 'blob', sha: blobSha };
+      })
+    );
+    blobEntries.push(...chunkResults);
+    
+    // Đợi một chút giữa các chunk nếu số lượng file lớn
+    if (i + chunkSize < filesToAdd.length) {
+      await new Promise(res => setTimeout(res, 500));
+    }
+  }
 
   let newTreeSha;
 

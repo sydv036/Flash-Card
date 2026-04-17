@@ -21,7 +21,7 @@ const allScripts: any[] = Object.values(scriptModules)
   .filter((lesson) => lesson.is_display !== false);
 
 // Tự động quét tất cả các file hình ảnh trong thư mục src/assets để import tự động
-const imageModules = import.meta.glob('@/assets/**/*.{png,jpg,jpeg,gif,svg,webp}', { eager: true, query: '?url', import: 'default' });
+const imageModules = import.meta.glob('@/assets/**/*.{png,jpg,jpeg,gif,svg,webp}', { query: '?url', import: 'default' });
 
 export type PlayMode = 'SEQUENTIAL' | 'SHUFFLE' | 'LOOP';
 
@@ -62,11 +62,11 @@ export function AudioPlayer() {
     }
   }, []);
 
-  const loadFiles = useCallback(() => {
+  const loadFiles = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const audioFiles = getLocalAudioFiles();
+      const audioFiles = await getLocalAudioFiles();
       setAllFiles(audioFiles);
     } catch (err: any) {
       setError(err.message || 'Failed to load local audio files.');
@@ -150,34 +150,33 @@ export function AudioPlayer() {
     return currentSessionScript.items.find((item: any) => item.id === currentAudioId) || null;
   }, [currentSessionScript, currentAudioId]);
 
-  const currentImageUrl = useMemo(() => {
-    if (currentSessionNumber === null || currentAudioId === null) return null;
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
 
-    // 1. Cắt số buổi ra thêm chữ B => ví dụ: B9
+  useEffect(() => {
+    if (currentSessionNumber === null || currentAudioId === null) {
+      setCurrentImageUrl(null);
+      return;
+    }
     const targetFolder = `B${currentSessionNumber}`;
-
-
-    // 2. Cắt tên audio ra => ví dụ: 2 (từ 2.mp3)
-    // Ở đây currentAudioId chính là số 2 đã được cắt ra từ trước
     const targetNamePrefix = `${currentAudioId}.`;
 
-    // Quét tìm trong danh sách ảnh nội bộ (đã compile sẵn cực nhanh)
     const possiblePaths = Object.keys(imageModules);
     const matchedPath = possiblePaths.find(path => {
       const parts = path.split('/');
       const folder = parts[parts.length - 2];
       const filename = parts[parts.length - 1];
-
-      // Khớp chính xác thư mục (B9) và tên file bắt đầu bằng số audio (vd "2.png", "2.jpg")
       return folder === targetFolder && filename.startsWith(targetNamePrefix);
     });
 
     if (matchedPath) {
-      return imageModules[matchedPath] as string;
+      (imageModules[matchedPath] as () => Promise<string>)().then(url => {
+        setCurrentImageUrl(url);
+      }).catch(() => {
+        setCurrentImageUrl(`/assets/${targetFolder}/${currentAudioId}.png`);
+      });
+    } else {
+      setCurrentImageUrl(`/assets/${targetFolder}/${currentAudioId}.png`);
     }
-
-    // Dự phòng: Nếu sau này bỏ trong public/assets/B9/2.png
-    return `/assets/${targetFolder}/${currentAudioId}.png`;
   }, [currentSessionNumber, currentAudioId]);
 
   const skipToNextSession = () => {

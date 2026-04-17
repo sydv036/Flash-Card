@@ -313,10 +313,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// ─── Auth endpoints (giữ nguyên logic cũ) ────────────────────────────────────
-
-let activeAuthToken = null;
-let authTokenExpires = 0;
+// ─── Auth endpoints (giữ nguyên logic cũ nhưng đổi sang Stateless) ───────────
 
 app.post('/api/auth/login', (req, res) => {
   const { password } = req.body;
@@ -332,12 +329,15 @@ app.post('/api/auth/login', (req, res) => {
 
     if (allowedPasswords.includes(password)) {
       // Lấy thời gian sống (TTL) của cookie từ env, tính bằng giây. Mặc định 180s
-      const ttlSeconds = parseInt(process.env.VITE_AUTH_TTL, 10) || 180;
+      const ttlSeconds = parseInt(process.env.VITE_AUTH_TTL, 10) || 18000000;
 
-      activeAuthToken = crypto.randomBytes(32).toString('hex');
-      authTokenExpires = Date.now() + (ttlSeconds * 1000);
+      // Tạo token Stateless chứa Expiry + Signature để không bị mất khi nodemon/vercel restart
+      const expires = Date.now() + (ttlSeconds * 1000);
+      const secret = process.env.GITHUB_TOKEN || process.env.VITE_PASS || 'default_secret';
+      const signature = crypto.createHmac('sha256', secret).update(expires.toString()).digest('hex');
+      const token = `${signature}.${expires}`;
 
-      res.setHeader('Set-Cookie', `fc_owner_auth=${activeAuthToken}; HttpOnly; Max-Age=${ttlSeconds}; Path=/; SameSite=Strict`);
+      res.setHeader('Set-Cookie', `fc_owner_auth=${token}; HttpOnly; Max-Age=${ttlSeconds}; Path=/; SameSite=Strict`);
       return res.json({ success: true });
     }
   } catch (err) {
@@ -351,8 +351,21 @@ app.get('/api/auth/verify', (req, res) => {
   const match = cookieStr.match(/fc_owner_auth=([^;]+)/);
   const token = match ? match[1] : null;
 
-  if (token && activeAuthToken && token === activeAuthToken && Date.now() < authTokenExpires) {
-    return res.json({ success: true, authenticated: true });
+  if (token) {
+    const parts = token.split('.');
+    if (parts.length === 2) {
+      const [signature, expiresStr] = parts;
+      const expires = parseInt(expiresStr, 10);
+
+      if (Date.now() < expires) {
+        const secret = process.env.GITHUB_TOKEN || process.env.VITE_PASS || 'default_secret';
+        const expectedSignature = crypto.createHmac('sha256', secret).update(expiresStr).digest('hex');
+
+        if (signature === expectedSignature) {
+          return res.json({ success: true, authenticated: true });
+        }
+      }
+    }
   }
 
   return res.json({ success: true, authenticated: false });
