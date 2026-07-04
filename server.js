@@ -426,6 +426,122 @@ app.delete('/api/lessons/:lessonId', async (req, res) => {
   }
 });
 
+// ─── GET /api/lessons/:lessonId/files ────────────────────────────────────────
+
+app.get('/api/lessons/:lessonId/files', async (req, res) => {
+  const lessonId = Number(req.params.lessonId);
+  if (isNaN(lessonId)) {
+    return res.status(400).json({ success: false, message: 'lessonId không hợp lệ' });
+  }
+
+  try {
+    const repoPaths = await getRepoPaths();
+    const normalizedPaths = Array.from(repoPaths).map(p => p.normalize('NFC'));
+
+    const audioPrefix1 = `src/utils/audio/Audio Buổi ${lessonId}/`.normalize('NFC');
+    const audioPrefix2 = `src/utils/audio/Audio buổi ${lessonId}/`.normalize('NFC');
+    const imagePrefix = `src/assets/B${lessonId}/`.normalize('NFC');
+
+    const audios = [];
+    const images = [];
+
+    for (const p of normalizedPaths) {
+      if (p.startsWith(audioPrefix1) || p.startsWith(audioPrefix2)) {
+        const name = p.split('/').pop();
+        audios.push({ name, path: p });
+      } else if (p.startsWith(imagePrefix)) {
+        const name = p.split('/').pop();
+        images.push({ name, path: p });
+      }
+    }
+
+    const naturalSort = (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'vi', { numeric: true });
+    audios.sort(naturalSort);
+    images.sort(naturalSort);
+
+    res.json({ success: true, audios, images });
+  } catch (error) {
+    console.error('[Get Files Error]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── DELETE /api/lessons/:lessonId/files ─────────────────────────────────────
+
+app.delete('/api/lessons/:lessonId/files', async (req, res) => {
+  const lessonId = Number(req.params.lessonId);
+  if (isNaN(lessonId)) {
+    return res.status(400).json({ success: false, message: 'lessonId không hợp lệ' });
+  }
+
+  const { paths } = req.body;
+  if (!paths || !Array.isArray(paths) || paths.length === 0) {
+    return res.status(400).json({ success: false, message: 'Danh sách paths để xóa không hợp lệ' });
+  }
+
+  try {
+    // Xóa các file local tương ứng
+    for (const fileToDelete of paths) {
+      const absoluteTarget = path.resolve(process.cwd(), fileToDelete);
+      
+      const absoluteAudioDir1 = path.resolve(process.cwd(), `src/utils/audio/Audio Buổi ${lessonId}`);
+      const absoluteAudioDir2 = path.resolve(process.cwd(), `src/utils/audio/Audio buổi ${lessonId}`);
+      const absoluteImageDir = path.resolve(process.cwd(), `src/assets/B${lessonId}`);
+      
+      const isInsideAllowedDir = absoluteTarget.startsWith(absoluteAudioDir1 + path.sep) ||
+                                 absoluteTarget.startsWith(absoluteAudioDir2 + path.sep) ||
+                                 absoluteTarget.startsWith(absoluteImageDir + path.sep);
+
+      if (!isInsideAllowedDir) {
+        return res.status(403).json({ success: false, message: `Từ chối xóa file ngoài phạm vi buổi học: ${fileToDelete}` });
+      }
+
+      try {
+        if (fs.existsSync(absoluteTarget)) {
+          fs.rmSync(absoluteTarget);
+          console.log(`[Local Sync] Đã xóa file local: ${absoluteTarget}`);
+        }
+      } catch (localErr) {
+        console.warn(`[Local Sync Warning] Không thể xóa file local ${fileToDelete}:`, localErr.message);
+      }
+    }
+
+    await commitChanges({
+      pathsToDelete: paths,
+      message: `[Delete] Xóa ${paths.length} file tùy chọn của buổi ${lessonId}`,
+    });
+
+    console.log(`[Delete] Xóa ${paths.length} file tùy chọn của buổi ${lessonId} → GitHub`);
+    res.json({ success: true, message: `Đã xóa ${paths.length} file tùy chọn thành công` });
+  } catch (error) {
+    console.error('[Delete Files Error]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── GET /api/files/raw ──────────────────────────────────────────────────────
+
+app.get('/api/files/raw', (req, res) => {
+  const filePath = req.query.path;
+  if (!filePath) return res.status(400).send('Path is required');
+  
+  const absoluteTarget = path.resolve(process.cwd(), filePath);
+  const absoluteAudioDir = path.resolve(process.cwd(), 'src/utils/audio');
+  const absoluteAssetsDir = path.resolve(process.cwd(), 'src/assets');
+  
+  const isInsideAllowedDir = absoluteTarget.startsWith(absoluteAudioDir + path.sep) ||
+                             absoluteTarget.startsWith(absoluteAssetsDir + path.sep);
+                             
+  if (!isInsideAllowedDir) {
+    return res.status(403).send('Access denied');
+  }
+  
+  if (!fs.existsSync(absoluteTarget)) {
+    return res.status(404).send('File not found');
+  }
+  res.sendFile(absoluteTarget);
+});
+
 // ─── Health check ────────────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {

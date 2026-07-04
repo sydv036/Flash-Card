@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, FolderOpen, Music, Image, CheckCircle2, Loader2, AlertCircle, FileAudio, FileImage, FileJson, BookOpen, Copy, Lock, Key, Trash2 } from 'lucide-react';
+import { Upload, FolderOpen, Music, Image, CheckCircle2, Loader2, AlertCircle, FileAudio, FileImage, FileJson, BookOpen, Copy, Lock, Key, Trash2, Play, Pause, Volume2, Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -641,6 +641,113 @@ function LessonsListSection({
   const [confirmDeleteLesson, setConfirmDeleteLesson] = useState<LessonMeta | null>(null);
   const [deleteOptions, setDeleteOptions] = useState({ script: true, audio: true, image: true });
 
+  const [manageFilesLesson, setManageFilesLesson] = useState<LessonMeta | null>(null);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [lessonFiles, setLessonFiles] = useState<{ audios: { name: string; path: string }[]; images: { name: string; path: string }[] }>({ audios: [], images: [] });
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [isPlayingFile, setIsPlayingFile] = useState<string | null>(null);
+  const modalAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const loadLessonFiles = async (lessonId: number) => {
+    setFilesLoading(true);
+    try {
+      const res = await fetch(`/api/lessons/${lessonId}/files`);
+      const data = await res.json();
+      if (data.success) {
+        setLessonFiles({
+          audios: data.audios || [],
+          images: data.images || []
+        });
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Không thể tải danh sách file');
+    } finally {
+      setFilesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (manageFilesLesson) {
+      loadLessonFiles(manageFilesLesson.lessonId);
+      setSelectedFiles([]);
+      setIsPlayingFile(null);
+      if (modalAudioRef.current) {
+        modalAudioRef.current.pause();
+        modalAudioRef.current.src = '';
+      }
+    } else {
+      setLessonFiles({ audios: [], images: [] });
+      setSelectedFiles([]);
+      setIsPlayingFile(null);
+      if (modalAudioRef.current) {
+        modalAudioRef.current.pause();
+        modalAudioRef.current.src = '';
+      }
+    }
+  }, [manageFilesLesson]);
+
+  const toggleFileSelect = (filePath: string) => {
+    setSelectedFiles(prev =>
+      prev.includes(filePath)
+        ? prev.filter(p => p !== filePath)
+        : [...prev, filePath]
+    );
+  };
+
+  const toggleAllCategory = (category: 'audios' | 'images', checked: boolean) => {
+    const categoryPaths = lessonFiles[category].map(f => f.path);
+    if (checked) {
+      setSelectedFiles(prev => Array.from(new Set([...prev, ...categoryPaths])));
+    } else {
+      setSelectedFiles(prev => prev.filter(p => !categoryPaths.includes(p)));
+    }
+  };
+
+  const togglePlayAudioFile = (filePath: string) => {
+    if (isPlayingFile === filePath) {
+      if (modalAudioRef.current) {
+        modalAudioRef.current.pause();
+      }
+      setIsPlayingFile(null);
+    } else {
+      setIsPlayingFile(filePath);
+      if (modalAudioRef.current) {
+        modalAudioRef.current.src = `/api/files/raw?path=${encodeURIComponent(filePath)}`;
+        modalAudioRef.current.play().catch(() => {
+          toast.error('Không thể phát file này');
+          setIsPlayingFile(null);
+        });
+      }
+    }
+  };
+
+  const handleCustomDelete = async () => {
+    if (!manageFilesLesson || selectedFiles.length === 0 || isGlobalSyncing) return;
+    const { lessonId } = manageFilesLesson;
+
+    setIsGlobalSyncing(true);
+    try {
+      const res = await fetch(`/api/lessons/${lessonId}/files`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: selectedFiles }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+
+      toast.success(`Đã xóa ${selectedFiles.length} file thành công`);
+      setSelectedFiles([]);
+      await loadLessonFiles(lessonId);
+      await fetchLessons();
+    } catch (err: any) {
+      toast.error(err.message || 'Xóa file thất bại');
+    } finally {
+      setIsGlobalSyncing(false);
+    }
+  };
+
   const fetchLessons = async () => {
     setLoading(true);
     try {
@@ -848,6 +955,21 @@ function LessonsListSection({
                       <button
                         type="button"
                         disabled={toggling === lesson.lessonId || deleting === lesson.lessonId || isGlobalSyncing}
+                        onClick={() => setManageFilesLesson(lesson)}
+                        className={cn(
+                          'p-1.5 rounded-md transition-colors',
+                          deleting === lesson.lessonId || toggling === lesson.lessonId || isGlobalSyncing
+                            ? 'opacity-50 cursor-not-allowed text-indigo-300'
+                            : 'text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30'
+                        )}
+                        title="Quản lý files trong buổi học"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={toggling === lesson.lessonId || deleting === lesson.lessonId || isGlobalSyncing}
                         onClick={() => requestDelete(lesson)}
                         className={cn(
                           'p-1.5 rounded-md transition-colors',
@@ -980,6 +1102,228 @@ function LessonsListSection({
           </div>
         </div>
       )}
+
+      {/* Manage Files Dialog Modal */}
+      {manageFilesLesson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400">
+                  <FolderOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground text-base">
+                    Quản lý Files - {manageFilesLesson.title}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Chọn các file Audio hoặc Ảnh để xóa tùy chỉnh
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setManageFilesLesson(null)}
+                className="text-muted-foreground hover:text-foreground text-sm font-semibold p-1 hover:bg-muted rounded-lg transition-colors"
+                disabled={isGlobalSyncing}
+              >
+                Đóng
+              </button>
+            </div>
+
+            {/* Content (Scrollable) */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-6 min-h-[300px]">
+              {filesLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-2">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                  <p className="text-xs text-muted-foreground">Đang tải danh sách file từ GitHub...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  {/* Audio Column */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between bg-muted/40 p-2 rounded-lg">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-foreground select-none">
+                        <input
+                          type="checkbox"
+                          checked={lessonFiles.audios.length > 0 && lessonFiles.audios.every(f => selectedFiles.includes(f.path))}
+                          disabled={lessonFiles.audios.length === 0 || isGlobalSyncing}
+                          onChange={(e) => toggleAllCategory('audios', e.target.checked)}
+                          className="rounded accent-red-500 w-4 h-4 cursor-pointer"
+                        />
+                        Audio MP3 ({lessonFiles.audios.length})
+                      </label>
+                    </div>
+
+                    {lessonFiles.audios.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-4 text-center italic">Không có file audio nào</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
+                        {lessonFiles.audios.map((file) => {
+                          const isSelected = selectedFiles.includes(file.path);
+                          const isPlaying = isPlayingFile === file.path;
+                          return (
+                            <div 
+                              key={file.path} 
+                              className={cn(
+                                "flex items-center gap-2 p-2 rounded-lg border text-xs transition-all",
+                                isSelected 
+                                  ? "bg-red-50/50 border-red-200 dark:bg-red-950/20 dark:border-red-900/40" 
+                                  : "border-border/40 hover:bg-muted/30"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={isGlobalSyncing}
+                                onChange={() => toggleFileSelect(file.path)}
+                                className="rounded accent-red-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                              />
+                              
+                              <button
+                                type="button"
+                                onClick={() => togglePlayAudioFile(file.path)}
+                                className={cn(
+                                  "w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors",
+                                  isPlaying 
+                                    ? "bg-indigo-500 text-white animate-pulse" 
+                                    : "bg-muted text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950"
+                                )}
+                                title={isPlaying ? "Tạm dừng" : "Phát thử"}
+                              >
+                                {isPlaying ? (
+                                  <Pause className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Play className="w-3.5 h-3.5 pl-0.5" />
+                                )}
+                              </button>
+
+                              <span className="flex-1 truncate font-medium text-foreground" title={file.name}>
+                                {file.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Image Column */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between bg-muted/40 p-2 rounded-lg">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-foreground select-none">
+                        <input
+                          type="checkbox"
+                          checked={lessonFiles.images.length > 0 && lessonFiles.images.every(f => selectedFiles.includes(f.path))}
+                          disabled={lessonFiles.images.length === 0 || isGlobalSyncing}
+                          onChange={(e) => toggleAllCategory('images', e.target.checked)}
+                          className="rounded accent-red-500 w-4 h-4 cursor-pointer"
+                        />
+                        Ảnh Minh Họa ({lessonFiles.images.length})
+                      </label>
+                    </div>
+
+                    {lessonFiles.images.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-4 text-center italic">Không có file ảnh nào</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
+                        {lessonFiles.images.map((file) => {
+                          const isSelected = selectedFiles.includes(file.path);
+                          const imgUrl = `/api/files/raw?path=${encodeURIComponent(file.path)}`;
+                          return (
+                            <div 
+                              key={file.path} 
+                              className={cn(
+                                "flex items-center gap-2 p-2 rounded-lg border text-xs transition-all",
+                                isSelected 
+                                  ? "bg-red-50/50 border-red-200 dark:bg-red-950/20 dark:border-red-900/40" 
+                                  : "border-border/40 hover:bg-muted/30"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={isGlobalSyncing}
+                                onChange={() => toggleFileSelect(file.path)}
+                                className="rounded accent-red-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                              />
+
+                              <div className="relative group w-7 h-7 rounded border border-border overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+                                <img 
+                                  src={imgUrl} 
+                                  alt="Preview" 
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer">
+                                  <Eye className="w-3 h-3 text-white" />
+                                </div>
+
+                                <div className="absolute left-8 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block w-36 h-36 rounded-lg border border-border bg-card shadow-2xl p-1 pointer-events-none">
+                                  <img 
+                                    src={imgUrl} 
+                                    alt="Zoom" 
+                                    className="w-full h-full object-contain rounded-md"
+                                  />
+                                </div>
+                              </div>
+
+                              <span className="flex-1 truncate font-medium text-foreground" title={file.name}>
+                                {file.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* Footer / Actions */}
+            <div className="pt-4 border-t border-border flex items-center justify-between shrink-0">
+              <span className="text-xs text-muted-foreground font-medium">
+                {selectedFiles.length > 0 
+                  ? `Đã chọn: ${selectedFiles.length} files` 
+                  : "Vui lòng chọn các file muốn xóa"
+                }
+              </span>
+              
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManageFilesLesson(null)}
+                  disabled={isGlobalSyncing}
+                >
+                  Đóng
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={selectedFiles.length === 0 || isGlobalSyncing}
+                  onClick={handleCustomDelete}
+                  className="bg-red-600 hover:bg-red-700 text-white font-medium flex items-center gap-1.5 shadow-sm"
+                >
+                  {isGlobalSyncing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Xóa các file đã chọn
+                </Button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Hidden audio element for modal testing */}
+      <audio 
+        ref={modalAudioRef} 
+        onEnded={() => setIsPlayingFile(null)} 
+        className="hidden" 
+      />
     </>
   );
 }
