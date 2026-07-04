@@ -28,6 +28,7 @@ export type PlayMode = 'SEQUENTIAL' | 'SHUFFLE' | 'LOOP';
 export function AudioPlayer() {
   const [allFiles, setAllFiles] = useState<AudioFile[]>([]);
   const [activeSession, setActiveSession] = useState<string>('All');
+  const [activeLessons, setActiveLessons] = useState<any[]>([]);
 
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -76,22 +77,59 @@ export function AudioPlayer() {
     }
   }, []);
 
+  // Fetch active lessons from backend dynamically to handle additions/deletions immediately
+  useEffect(() => {
+    const fetchActiveLessons = async () => {
+      try {
+        const res = await fetch('/api/lessons');
+        const data = await res.json();
+        if (data.success) {
+          setActiveLessons(data.lessons);
+        }
+      } catch (err) {
+        console.error('Failed to fetch active lessons from API:', err);
+      }
+    };
+    fetchActiveLessons();
+  }, []);
+
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
 
   const sessions = useMemo(() => {
     const sessionSet = new Set<string>();
-    allFiles.forEach(f => sessionSet.add(f.session));
+    allFiles.forEach(f => {
+      const match = f.session.match(/\d+/);
+      const id = match ? parseInt(match[0], 10) : null;
+      if (id !== null) {
+        // Chỉ hiển thị buổi học có trong danh sách lessons từ backend, hasAudio: true và is_display: true
+        const activeLesson = activeLessons.find(l => l.lessonId === id);
+        if (activeLesson && activeLesson.hasAudio && activeLesson.is_display !== false) {
+          sessionSet.add(f.session);
+        }
+      }
+    });
     return Array.from(sessionSet).sort((a, b) =>
       a.toLowerCase().localeCompare(b.toLowerCase(), 'vi', { numeric: true })
     );
-  }, [allFiles]);
+  }, [allFiles, activeLessons]);
 
   const filteredFiles = useMemo(() => {
-    if (activeSession === 'All') return allFiles;
-    return allFiles.filter(f => f.session === activeSession);
-  }, [allFiles, activeSession]);
+    // Chỉ giữ lại những file thuộc các buổi học hợp lệ
+    const validFiles = allFiles.filter(f => {
+      const match = f.session.match(/\d+/);
+      const id = match ? parseInt(match[0], 10) : null;
+      if (id !== null) {
+        const activeLesson = activeLessons.find(l => l.lessonId === id);
+        return activeLesson && activeLesson.hasAudio && activeLesson.is_display !== false;
+      }
+      return false;
+    });
+
+    if (activeSession === 'All') return validFiles;
+    return validFiles.filter(f => f.session === activeSession);
+  }, [allFiles, activeSession, activeLessons]);
 
   const handleSessionChange = (val: string) => {
     clearPendingTimeout();
@@ -165,17 +203,17 @@ export function AudioPlayer() {
       const parts = path.split('/');
       const folder = parts[parts.length - 2];
       const filename = parts[parts.length - 1];
-      return folder === targetFolder && filename.startsWith(targetNamePrefix);
+      return folder === targetFolder && filename.toLowerCase().startsWith(targetNamePrefix.toLowerCase());
     });
 
     if (matchedPath) {
       (imageModules[matchedPath] as () => Promise<string>)().then(url => {
         setCurrentImageUrl(url);
       }).catch(() => {
-        setCurrentImageUrl(`/assets/${targetFolder}/${currentAudioId}.png`);
+        setCurrentImageUrl(null);
       });
     } else {
-      setCurrentImageUrl(`/assets/${targetFolder}/${currentAudioId}.png`);
+      setCurrentImageUrl(null);
     }
   }, [currentSessionNumber, currentAudioId]);
 
