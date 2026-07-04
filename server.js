@@ -2,6 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import { commitChanges, readFile, getRepoPaths } from './github-api.js';
 
 dotenv.config();
@@ -78,6 +80,29 @@ app.post('/api/upload', (req, res) => {
     }
 
     try {
+      // Lưu file vào local disk để đồng bộ môi trường dev local
+      try {
+        for (const file of audios) {
+          const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+          const localDir = path.join(process.cwd(), `src/utils/audio/Audio Buổi ${session}`);
+          if (!fs.existsSync(localDir)) {
+            fs.mkdirSync(localDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(localDir, originalName), file.buffer);
+        }
+        for (const file of images) {
+          const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+          const localDir = path.join(process.cwd(), `src/assets/B${session}`);
+          if (!fs.existsSync(localDir)) {
+            fs.mkdirSync(localDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(localDir, originalName), file.buffer);
+        }
+        console.log(`[Local Sync] Đã lưu các file upload vào ổ đĩa local`);
+      } catch (localErr) {
+        console.warn('[Local Sync Error] Không thể lưu file vào ổ đĩa local:', localErr.message);
+      }
+
       await commitChanges({
         filesToAdd: filesToCommit,
         message: `[Upload] Buổi ${session}: ${audios.length} MP3, ${images.length} ảnh`,
@@ -143,6 +168,15 @@ app.post('/api/merge-script', async (req, res) => {
       lessons.sort((a, b) => a.lessonId - b.lessonId);
     }
 
+    // Cập nhật local script.json
+    try {
+      const localScriptPath = path.join(process.cwd(), 'src/utils/audio/script/script.json');
+      fs.writeFileSync(localScriptPath, JSON.stringify(lessons, null, 2), 'utf-8');
+      console.log('[Local Sync] Đã cập nhật script.json local trong merge-script');
+    } catch (err) {
+      console.warn('[Local Sync Warning] Không thể ghi script.json local:', err.message);
+    }
+
     await commitChanges({
       filesToAdd: [{
         path: 'src/utils/audio/script/script.json',
@@ -180,29 +214,43 @@ app.get('/api/lessons', async (req, res) => {
     const lessonIds = new Set(lessons.map(l => l.lessonId));
 
     // Quét tree để tìm thư mục Audio và Image
+    // Normalize NFC để khớp cả trường hợp GitHub lưu tên thư mục dạng NFD (ký tự Unicode phân tách)
     for (const p of repoPaths) {
-      const audioMatch = p.match(/^src\/utils\/audio\/Audio Buổi (\d+)\//);
+      const normalized = p.normalize('NFC');
+      // Dùng /i để match cả "Audio buổi" (b thường) lẫn "Audio Buổi" (B hoa)
+      const audioMatch = normalized.match(/^src\/utils\/audio\/audio bu\u1ed5i (\d+)\//i);
       if (audioMatch) lessonIds.add(Number(audioMatch[1]));
 
-      const imageMatch = p.match(/^src\/assets\/B(\d+)\//);
+      const imageMatch = normalized.match(/^src\/assets\/B(\d+)\//);
       if (imageMatch) lessonIds.add(Number(imageMatch[1]));
     }
 
-    const list = Array.from(lessonIds).sort((a, b) => a - b).map(id => {
-      const scriptLesson = lessons.find(l => l.lessonId === id);
-      const hasAudio = [...repoPaths].some(p => p.startsWith(`src/utils/audio/Audio Buổi ${id}/`));
-      const hasImage = [...repoPaths].some(p => p.startsWith(`src/assets/B${id}/`));
+    // Kiểm tra audio theo cả 2 dạng tên thư mục (B hoa / b thường)
+    const hasAudioForId = (id) => [
+      `src/utils/audio/Audio Bu\u1ed5i ${id}/`,
+      `src/utils/audio/Audio bu\u1ed5i ${id}/`,
+    ].some(prefix => [...repoPaths].some(p => p.normalize('NFC').startsWith(prefix)));
 
-      return {
-        lessonId: id,
-        title: scriptLesson ? scriptLesson.title : `Buổi ${id}`,
-        is_display: scriptLesson?.is_display !== undefined ? scriptLesson.is_display : true,
-        itemCount: scriptLesson?.items?.length || 0,
-        hasScript: !!scriptLesson,
-        hasAudio,
-        hasImage,
-      };
-    });
+    const list = Array.from(lessonIds)
+      .sort((a, b) => a - b)
+      .map(id => {
+        const scriptLesson = lessons.find(l => l.lessonId === id);
+        const hasAudio = hasAudioForId(id);
+        const hasImage = [...repoPaths].some(p => p.startsWith(`src/assets/B${id}/`));
+        const hasScript = !!scriptLesson;
+
+        return {
+          lessonId: id,
+          title: scriptLesson ? scriptLesson.title : `Buổi ${id}`,
+          is_display: scriptLesson?.is_display !== undefined ? scriptLesson.is_display : true,
+          itemCount: scriptLesson?.items?.length || 0,
+          hasScript,
+          hasAudio,
+          hasImage,
+        };
+      })
+      // Chỉ hiện buổi có ít nhất 1 trong 3: script, audio, hoặc ảnh
+      .filter(l => l.hasScript || l.hasAudio || l.hasImage);
 
     res.json({ success: true, lessons: list });
   } catch (error) {
@@ -232,6 +280,15 @@ app.patch('/api/lessons/:lessonId/display', async (req, res) => {
     }
 
     lessons[idx].is_display = is_display;
+
+    // Cập nhật local script.json
+    try {
+      const localScriptPath = path.join(process.cwd(), 'src/utils/audio/script/script.json');
+      fs.writeFileSync(localScriptPath, JSON.stringify(lessons, null, 2), 'utf-8');
+      console.log('[Local Sync] Đã cập nhật script.json local trong display toggle');
+    } catch (err) {
+      console.warn('[Local Sync Warning] Không thể ghi script.json local:', err.message);
+    }
 
     await commitChanges({
       filesToAdd: [{
@@ -265,14 +322,67 @@ app.delete('/api/lessons/:lessonId', async (req, res) => {
     const filesToAdd = [];
     const deletedItems = [];
 
-    if (types.includes('audio')) {
-      pathsToDelete.push(`src/utils/audio/Audio Buổi ${lessonId}`);
-      deletedItems.push('Audio');
-    }
+    if (types.includes('audio') || types.includes('image')) {
+      // Lấy repo paths để tìm đúng tên thư mục (B hoa / b thường)
+      const repoPaths = await getRepoPaths();
 
-    if (types.includes('image')) {
-      pathsToDelete.push(`src/assets/B${lessonId}`);
-      deletedItems.push('Ảnh');
+      if (types.includes('audio')) {
+        // Tìm đúng prefix thực tế trên GitHub (case-insensitive)
+        const audioRegex = new RegExp(`^src/utils/audio/audio buổi ${lessonId}/`, 'i');
+        const actualAudioPrefix = [...repoPaths]
+          .map(p => p.normalize('NFC'))
+          .find(p => audioRegex.test(p));
+
+        if (actualAudioPrefix) {
+          // Lấy phần thư mục (bỏ tên file ở cuối)
+          const folderPath = actualAudioPrefix.replace(/\/[^/]+$/, '');
+          pathsToDelete.push(folderPath);
+          deletedItems.push('Audio');
+
+          // Xóa local folder
+          try {
+            const localAudioDir = path.join(process.cwd(), folderPath);
+            if (fs.existsSync(localAudioDir)) {
+              fs.rmSync(localAudioDir, { recursive: true, force: true });
+              console.log(`[Local Sync] Đã xóa local audio folder: ${localAudioDir}`);
+            }
+          } catch (err) {
+            console.warn('[Local Sync Warning] Không thể xóa local audio folder:', err.message);
+          }
+        } else {
+          console.warn(`[Delete] Không tìm thấy thư mục audio cho buổi ${lessonId} trên GitHub`);
+        }
+
+        // Dự phòng: Xóa các folder local thông dụng
+        try {
+          const localAudioDir1 = path.join(process.cwd(), `src/utils/audio/Audio Buổi ${lessonId}`);
+          const localAudioDir2 = path.join(process.cwd(), `src/utils/audio/Audio buổi ${lessonId}`);
+          if (fs.existsSync(localAudioDir1)) {
+            fs.rmSync(localAudioDir1, { recursive: true, force: true });
+            console.log(`[Local Sync] Đã xóa dự phòng: ${localAudioDir1}`);
+          }
+          if (fs.existsSync(localAudioDir2)) {
+            fs.rmSync(localAudioDir2, { recursive: true, force: true });
+            console.log(`[Local Sync] Đã xóa dự phòng: ${localAudioDir2}`);
+          }
+        } catch (err) {}
+      }
+
+      if (types.includes('image')) {
+        pathsToDelete.push(`src/assets/B${lessonId}`);
+        deletedItems.push('Ảnh');
+
+        // Xóa local folder
+        try {
+          const localImgDir = path.join(process.cwd(), `src/assets/B${lessonId}`);
+          if (fs.existsSync(localImgDir)) {
+            fs.rmSync(localImgDir, { recursive: true, force: true });
+            console.log(`[Local Sync] Đã xóa local image folder: ${localImgDir}`);
+          }
+        } catch (err) {
+          console.warn('[Local Sync Warning] Không thể xóa local image folder:', err.message);
+        }
+      }
     }
 
     if (types.includes('script')) {
@@ -286,6 +396,15 @@ app.delete('/api/lessons/:lessonId', async (req, res) => {
           encoding: 'utf-8',
         });
         deletedItems.push('Script');
+
+        // Cập nhật script.json ở local
+        try {
+          const localScriptPath = path.join(process.cwd(), 'src/utils/audio/script/script.json');
+          fs.writeFileSync(localScriptPath, JSON.stringify(lessons, null, 2), 'utf-8');
+          console.log('[Local Sync] Đã cập nhật script.json local');
+        } catch (err) {
+          console.warn('[Local Sync Warning] Không thể cập nhật script.json local:', err.message);
+        }
       }
     }
 
