@@ -2,7 +2,7 @@
   {
     "lessonId": 2,
     "title": "Audio buổi 2",
-    "is_display": true,
+    "is_display": false,
     "items": [
       {
         "id": 1,
