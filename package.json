@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"nodemon --ext js,json,env server.js\" \"vite\"",
-    "server": "nodemon --ext js,json,env server.js",
+    "dev": "concurrently \"nodemon --ignore src/ --ext js,json,env server.js\" \"vite\"",
+    "server": "nodemon --ignore src/ --ext js,json,env server.js",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

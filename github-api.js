@@ -14,24 +14,48 @@ function getConfig() {
 
 // ─── Fetch wrapper ──────────────────────────────────────────────────────────
 
-async function githubFetch(endpoint, options = {}) {
+async function githubFetch(endpoint, options = {}, _retries = 3) {
   const { token } = getConfig();
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (networkErr) {
+    throw new Error(`GitHub API - Lỗi mạng: ${networkErr.message}`);
+  }
 
   if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`GitHub API ${res.status}: ${errorText}`);
+    const contentType = res.headers.get('content-type') || '';
+
+    // GitHub trả về HTML (trang Unicorn/503) khi server quá tải tạm thời
+    if (contentType.includes('text/html')) {
+      // Tự động retry với 5xx errors
+      if (res.status >= 500 && _retries > 1) {
+        console.warn(`[GitHub] Server lỗi ${res.status}, thử lại sau 2s... (còn ${_retries - 1} lần)`);
+        await new Promise(r => setTimeout(r, 2000));
+        return githubFetch(endpoint, options, _retries - 1);
+      }
+      throw new Error(`GitHub API ${res.status}: Server GitHub tạm thời quá tải. Vui lòng thử lại sau vài giây.`);
+    }
+
+    let errorMsg;
+    try {
+      const errJson = await res.json();
+      errorMsg = errJson.message || JSON.stringify(errJson);
+    } catch {
+      errorMsg = await res.text();
+    }
+    throw new Error(`GitHub API ${res.status}: ${errorMsg}`);
   }
 
   return res.json();
@@ -88,7 +112,7 @@ async function updateRef(commitSha) {
   const { repo, branch } = getConfig();
   await githubFetch(`/repos/${repo}/git/refs/heads/${branch}`, {
     method: 'PATCH',
-    body: JSON.stringify({ sha: commitSha }),
+    body: JSON.stringify({ sha: commitSha, force: true }),
   });
 }
 
@@ -143,9 +167,11 @@ export async function commitChanges({ filesToAdd = [], pathsToDelete = [], messa
     let remainingEntries = fullTree.tree
       .filter(entry => entry.type === 'blob')
       .filter(entry =>
-        !pathsToDelete.some(prefix =>
-          entry.path === prefix || entry.path.startsWith(prefix + '/')
-        )
+        !pathsToDelete.some(prefix => {
+          const normEntryPath = entry.path.normalize('NFC');
+          const normPrefix = prefix.normalize('NFC');
+          return normEntryPath === normPrefix || normEntryPath.startsWith(normPrefix + '/');
+        })
       )
       .map(e => ({ path: e.path, mode: e.mode, type: 'blob', sha: e.sha }));
 

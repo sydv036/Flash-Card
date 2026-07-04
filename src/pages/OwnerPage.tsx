@@ -9,7 +9,13 @@ import { useRef } from 'react';
 
 // ─── Section 1: Upload Audio & Ảnh ───────────────────────────────────────────
 
-function UploadAudioSection() {
+function UploadAudioSection({
+  isGlobalSyncing,
+  setIsGlobalSyncing,
+}: {
+  isGlobalSyncing: boolean;
+  setIsGlobalSyncing: (val: boolean) => void;
+}) {
   const [session, setSession] = useState<string>('');
   const [audioFiles, setAudioFiles] = useState<File[]>([]);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
@@ -28,6 +34,10 @@ function UploadAudioSection() {
   };
 
   const validate = () => {
+    if (isGlobalSyncing) {
+      toast.error('Hệ thống đang đồng bộ tác vụ khác lên GitHub, vui lòng đợi...');
+      return false;
+    }
     if (!session || isNaN(Number(session)) || Number(session) <= 0) {
       toast.error('Vui lòng nhập số buổi học hợp lệ');
       return false;
@@ -40,8 +50,10 @@ function UploadAudioSection() {
   };
 
   const handleConfirmedUpload = async () => {
+    if (isGlobalSyncing) return;
     setShowConfirm(false);
     setLoading(true);
+    setIsGlobalSyncing(true);
     let successCount = 0;
 
     try {
@@ -88,6 +100,7 @@ function UploadAudioSection() {
       toast.error(err.message || 'Đã có lỗi xảy ra');
     } finally {
       setLoading(false);
+      setIsGlobalSyncing(false);
     }
   };
 
@@ -209,9 +222,9 @@ function UploadAudioSection() {
           size="lg"
           className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold shadow-xl shadow-indigo-500/20 hover:scale-[1.01] transition-all"
           onClick={() => { if (validate()) setShowConfirm(true); }}
-          disabled={!canSubmit || loading}
+          disabled={!canSubmit || loading || isGlobalSyncing}
         >
-          {loading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Đang tải lên...</> : <><Upload className="w-5 h-5 mr-2" /> Tải lên Audio & Ảnh</>}
+          {loading || isGlobalSyncing ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Đang xử lý...</> : <><Upload className="w-5 h-5 mr-2" /> Tải lên Audio & Ảnh</>}
         </Button>
       </div>
 
@@ -231,8 +244,8 @@ function UploadAudioSection() {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowConfirm(false)}>Huỷ</Button>
-              <Button id="confirm-upload-btn" className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white" onClick={handleConfirmedUpload}>Xác nhận</Button>
+              <Button variant="outline" className="flex-1" onClick={() => setShowConfirm(false)} disabled={isGlobalSyncing}>Huỷ</Button>
+              <Button id="confirm-upload-btn" className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white" onClick={handleConfirmedUpload} disabled={isGlobalSyncing}>Xác nhận</Button>
             </div>
           </div>
         </div>
@@ -294,7 +307,13 @@ const SAMPLE_JSON = `
 ]
 `;
 
-function UploadScriptSection() {
+function UploadScriptSection({
+  isGlobalSyncing,
+  setIsGlobalSyncing,
+}: {
+  isGlobalSyncing: boolean;
+  setIsGlobalSyncing: (val: boolean) => void;
+}) {
   const [session, setSession] = useState<string>('');
   const [isDisplay, setIsDisplay] = useState<boolean>(true);
   const [jsonText, setJsonText] = useState<string>('');
@@ -343,6 +362,10 @@ function UploadScriptSection() {
   };
 
   const validate = () => {
+    if (isGlobalSyncing) {
+      toast.error('Hệ thống đang đồng bộ tác vụ khác lên GitHub, vui lòng đợi...');
+      return false;
+    }
     if (!session || isNaN(Number(session)) || Number(session) <= 0) {
       toast.error('Vui lòng nhập số buổi học hợp lệ');
       return false;
@@ -359,8 +382,10 @@ function UploadScriptSection() {
   };
 
   const handleConfirmedUpload = async () => {
+    if (isGlobalSyncing) return;
     setShowConfirm(false);
     setLoading(true);
+    setIsGlobalSyncing(true);
     try {
       let parsed: any;
       try {
@@ -386,6 +411,7 @@ function UploadScriptSection() {
       toast.error(err.message || 'Đã có lỗi xảy ra');
     } finally {
       setLoading(false);
+      setIsGlobalSyncing(false);
     }
   };
 
@@ -553,9 +579,9 @@ function UploadScriptSection() {
           size="lg"
           className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-xl shadow-emerald-500/20 hover:scale-[1.01] transition-all"
           onClick={() => { if (validate()) setShowConfirm(true); }}
-          disabled={!canSubmit || loading}
+          disabled={!canSubmit || loading || isGlobalSyncing}
         >
-          {loading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Đang lưu script...</> : <><BookOpen className="w-5 h-5 mr-2" /> Lưu Script JSON</>}
+          {loading || isGlobalSyncing ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Đang xử lý...</> : <><BookOpen className="w-5 h-5 mr-2" /> Lưu Script JSON</>}
         </Button>
       </div>
 
@@ -577,8 +603,8 @@ function UploadScriptSection() {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowConfirm(false)}>Huỷ</Button>
-              <Button id="confirm-script-btn" className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white" onClick={handleConfirmedUpload}>Xác nhận</Button>
+              <Button variant="outline" className="flex-1" onClick={() => setShowConfirm(false)} disabled={isGlobalSyncing}>Huỷ</Button>
+              <Button id="confirm-script-btn" className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white" onClick={handleConfirmedUpload} disabled={isGlobalSyncing}>Xác nhận</Button>
             </div>
           </div>
         </div>
@@ -599,7 +625,13 @@ type LessonMeta = {
   hasImage?: boolean;
 };
 
-function LessonsListSection() {
+function LessonsListSection({
+  isGlobalSyncing,
+  setIsGlobalSyncing,
+}: {
+  isGlobalSyncing: boolean;
+  setIsGlobalSyncing: (val: boolean) => void;
+}) {
   const [lessons, setLessons] = useState<LessonMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<number | null>(null);
@@ -624,10 +656,18 @@ function LessonsListSection() {
 
   // Bước 1: Hiện confirm
   const requestToggle = (lesson: LessonMeta) => {
+    if (isGlobalSyncing) {
+      toast.error('Hệ thống đang đồng bộ tác vụ khác lên GitHub, vui lòng đợi...');
+      return;
+    }
     setConfirmLesson(lesson);
   };
 
   const requestDelete = (lesson: LessonMeta) => {
+    if (isGlobalSyncing) {
+      toast.error('Hệ thống đang đồng bộ tác vụ khác lên GitHub, vui lòng đợi...');
+      return;
+    }
     setDeleteOptions({
       script: !!lesson.hasScript,
       audio: !!lesson.hasAudio,
@@ -638,10 +678,11 @@ function LessonsListSection() {
 
   // Bước 2: Người dùng xác nhận → mới gọi API
   const handleConfirmedToggle = async () => {
-    if (!confirmLesson) return;
+    if (!confirmLesson || isGlobalSyncing) return;
     const { lessonId, is_display } = confirmLesson;
     setConfirmLesson(null);
     setToggling(lessonId);
+    setIsGlobalSyncing(true);
     try {
       const res = await fetch(`/api/lessons/${lessonId}/display`, {
         method: 'PATCH',
@@ -658,11 +699,12 @@ function LessonsListSection() {
       toast.error(err.message || 'Cập nhật thất bại');
     } finally {
       setToggling(null);
+      setIsGlobalSyncing(false);
     }
   };
 
   const handleConfirmedDelete = async () => {
-    if (!confirmDeleteLesson) return;
+    if (!confirmDeleteLesson || isGlobalSyncing) return;
     const { lessonId } = confirmDeleteLesson;
 
     const types = [];
@@ -677,6 +719,7 @@ function LessonsListSection() {
 
     setConfirmDeleteLesson(null);
     setDeleting(lessonId);
+    setIsGlobalSyncing(true);
     try {
       const res = await fetch(`/api/lessons/${lessonId}?types=${types.join(',')}`, {
         method: 'DELETE',
@@ -691,6 +734,7 @@ function LessonsListSection() {
       toast.error(err.message || 'Xóa thất bại');
     } finally {
       setDeleting(null);
+      setIsGlobalSyncing(false);
     }
   };
 
@@ -783,11 +827,11 @@ function LessonsListSection() {
                       <button
                         id={`toggle-lesson-${lesson.lessonId}`}
                         type="button"
-                        disabled={toggling === lesson.lessonId || deleting === lesson.lessonId}
+                        disabled={toggling === lesson.lessonId || deleting === lesson.lessonId || isGlobalSyncing}
                         onClick={() => requestToggle(lesson)}
                         className={cn(
                           'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0',
-                          toggling === lesson.lessonId || deleting === lesson.lessonId ? 'opacity-50 cursor-not-allowed' : '',
+                          toggling === lesson.lessonId || deleting === lesson.lessonId || isGlobalSyncing ? 'opacity-50 cursor-not-allowed' : '',
                           lesson.is_display ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'
                         )}
                       >
@@ -803,11 +847,11 @@ function LessonsListSection() {
 
                       <button
                         type="button"
-                        disabled={toggling === lesson.lessonId || deleting === lesson.lessonId}
+                        disabled={toggling === lesson.lessonId || deleting === lesson.lessonId || isGlobalSyncing}
                         onClick={() => requestDelete(lesson)}
                         className={cn(
                           'p-1.5 rounded-md transition-colors',
-                          deleting === lesson.lessonId ? 'opacity-50 cursor-not-allowed text-red-300' : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30'
+                          deleting === lesson.lessonId || toggling === lesson.lessonId || isGlobalSyncing ? 'opacity-50 cursor-not-allowed text-red-300' : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30'
                         )}
                         title="Xóa buổi học này"
                       >
@@ -859,6 +903,7 @@ function LessonsListSection() {
                 variant="outline"
                 className="flex-1"
                 onClick={() => setConfirmLesson(null)}
+                disabled={isGlobalSyncing}
               >
                 Huỷ
               </Button>
@@ -871,8 +916,9 @@ function LessonsListSection() {
                     : 'bg-emerald-600 hover:bg-emerald-700'
                 )}
                 onClick={handleConfirmedToggle}
+                disabled={isGlobalSyncing}
               >
-                {confirmLesson.is_display ? 'Xác nhận ẩn' : 'Xác nhận hiện'}
+                Xác nhận
               </Button>
             </div>
           </div>
@@ -896,18 +942,18 @@ function LessonsListSection() {
                 </p>
 
                 <div className="flex flex-col gap-2 mt-3">
-                  <label className={cn("flex items-center gap-2 text-sm", !confirmDeleteLesson.hasScript ? "opacity-50" : "cursor-pointer")}>
-                    <input type="checkbox" checked={deleteOptions.script} disabled={!confirmDeleteLesson.hasScript} onChange={e => setDeleteOptions(prev => ({ ...prev, script: e.target.checked }))} className="rounded accent-red-500 w-4 h-4 cursor-pointer" />
+                  <label className={cn("flex items-center gap-2 text-sm", (!confirmDeleteLesson.hasScript || isGlobalSyncing) ? "opacity-50" : "cursor-pointer")}>
+                    <input type="checkbox" checked={deleteOptions.script} disabled={!confirmDeleteLesson.hasScript || isGlobalSyncing} onChange={e => setDeleteOptions(prev => ({ ...prev, script: e.target.checked }))} className="rounded accent-red-500 w-4 h-4 cursor-pointer" />
                     Xóa Script JSON {confirmDeleteLesson.hasScript && <span className="text-muted-foreground text-xs">({confirmDeleteLesson.itemCount} câu hỏi)</span>}
                   </label>
 
-                  <label className={cn("flex items-center gap-2 text-sm", !confirmDeleteLesson.hasAudio ? "opacity-50" : "cursor-pointer")}>
-                    <input type="checkbox" checked={deleteOptions.audio} disabled={!confirmDeleteLesson.hasAudio} onChange={e => setDeleteOptions(prev => ({ ...prev, audio: e.target.checked }))} className="rounded accent-red-500 w-4 h-4 cursor-pointer" />
+                  <label className={cn("flex items-center gap-2 text-sm", (!confirmDeleteLesson.hasAudio || isGlobalSyncing) ? "opacity-50" : "cursor-pointer")}>
+                    <input type="checkbox" checked={deleteOptions.audio} disabled={!confirmDeleteLesson.hasAudio || isGlobalSyncing} onChange={e => setDeleteOptions(prev => ({ ...prev, audio: e.target.checked }))} className="rounded accent-red-500 w-4 h-4 cursor-pointer" />
                     Xóa thư mục Audio MP3
                   </label>
 
-                  <label className={cn("flex items-center gap-2 text-sm", !confirmDeleteLesson.hasImage ? "opacity-50" : "cursor-pointer")}>
-                    <input type="checkbox" checked={deleteOptions.image} disabled={!confirmDeleteLesson.hasImage} onChange={e => setDeleteOptions(prev => ({ ...prev, image: e.target.checked }))} className="rounded accent-red-500 w-4 h-4 cursor-pointer" />
+                  <label className={cn("flex items-center gap-2 text-sm", (!confirmDeleteLesson.hasImage || isGlobalSyncing) ? "opacity-50" : "cursor-pointer")}>
+                    <input type="checkbox" checked={deleteOptions.image} disabled={!confirmDeleteLesson.hasImage || isGlobalSyncing} onChange={e => setDeleteOptions(prev => ({ ...prev, image: e.target.checked }))} className="rounded accent-red-500 w-4 h-4 cursor-pointer" />
                     Xóa thư mục Ảnh minh họa
                   </label>
                 </div>
@@ -918,6 +964,7 @@ function LessonsListSection() {
                 variant="outline"
                 className="flex-1"
                 onClick={() => setConfirmDeleteLesson(null)}
+                disabled={isGlobalSyncing}
               >
                 Huỷ
               </Button>
@@ -925,6 +972,7 @@ function LessonsListSection() {
                 id="confirm-delete-btn"
                 className="flex-1 text-white bg-red-600 hover:bg-red-700"
                 onClick={handleConfirmedDelete}
+                disabled={isGlobalSyncing}
               >
                 Xác nhận
               </Button>
@@ -946,6 +994,7 @@ export function OwnerPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
   const [loginError, setLoginError] = useState('');
+  const [isGlobalSyncing, setIsGlobalSyncing] = useState<boolean>(false);
 
   // Tùy chọn: tự động theo dõi nếu cookie hết hạn mà đang ở trong tab thì văng ra ngoài
   useEffect(() => {
@@ -1062,9 +1111,11 @@ export function OwnerPage() {
               'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all',
               activeTab === 'audio'
                 ? 'bg-white dark:bg-gray-800 shadow-sm text-indigo-700 dark:text-indigo-300'
-                : 'text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+              isGlobalSyncing ? 'opacity-50 cursor-not-allowed' : ''
             )}
-            onClick={() => setActiveTab('audio')}
+            onClick={() => !isGlobalSyncing && setActiveTab('audio')}
+            disabled={isGlobalSyncing}
           >
             <Music className="w-4 h-4" />
             Audio & Ảnh
@@ -1074,9 +1125,11 @@ export function OwnerPage() {
               'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all',
               activeTab === 'script'
                 ? 'bg-white dark:bg-gray-800 shadow-sm text-emerald-700 dark:text-emerald-300'
-                : 'text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+              isGlobalSyncing ? 'opacity-50 cursor-not-allowed' : ''
             )}
-            onClick={() => setActiveTab('script')}
+            onClick={() => !isGlobalSyncing && setActiveTab('script')}
+            disabled={isGlobalSyncing}
           >
             <FileJson className="w-4 h-4" />
             Script JSON
@@ -1086,18 +1139,20 @@ export function OwnerPage() {
               'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all',
               activeTab === 'lessons'
                 ? 'bg-white dark:bg-gray-800 shadow-sm text-violet-700 dark:text-violet-300'
-                : 'text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+              isGlobalSyncing ? 'opacity-50 cursor-not-allowed' : ''
             )}
-            onClick={() => setActiveTab('lessons')}
+            onClick={() => !isGlobalSyncing && setActiveTab('lessons')}
+            disabled={isGlobalSyncing}
           >
             <BookOpen className="w-4 h-4" />
             Danh sách
           </button>
         </div>
 
-        {activeTab === 'audio' && <UploadAudioSection />}
-        {activeTab === 'script' && <UploadScriptSection />}
-        {activeTab === 'lessons' && <LessonsListSection />}
+        {activeTab === 'audio' && <UploadAudioSection isGlobalSyncing={isGlobalSyncing} setIsGlobalSyncing={setIsGlobalSyncing} />}
+        {activeTab === 'script' && <UploadScriptSection isGlobalSyncing={isGlobalSyncing} setIsGlobalSyncing={setIsGlobalSyncing} />}
+        {activeTab === 'lessons' && <LessonsListSection isGlobalSyncing={isGlobalSyncing} setIsGlobalSyncing={setIsGlobalSyncing} />}
       </div>
     </div>
   );

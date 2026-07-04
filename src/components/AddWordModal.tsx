@@ -32,6 +32,7 @@ export function AddWordModal() {
   const [exampleEnglish, setExampleEnglish] = useState('');
   const [exampleVietnamese, setExampleVietnamese] = useState('');
   const [selectedSheet, setSelectedSheet] = useState('');
+  const [newSheetName, setNewSheetName] = useState('');
 
   // Determine initial sheet
   const handleOpenChange = (open: boolean) => {
@@ -54,12 +55,14 @@ export function AddWordModal() {
       toast.error('Vui lòng nhập bản dịch tiếng Việt');
       return;
     }
-    if (!selectedSheet.trim()) {
+
+    const sheetName = selectedSheet === 'new_sheet_option' ? newSheetName.trim() : selectedSheet.trim();
+    if (!sheetName) {
       toast.error('Vui lòng chọn hoặc nhập tên buổi học');
       return;
     }
 
-    addWord(selectedSheet.trim(), {
+    addWord(sheetName, {
       english: english.trim(),
       wordType: wordType.trim(),
       translation: translation.trim(),
@@ -68,7 +71,7 @@ export function AddWordModal() {
     });
 
     // Automatically set the active sheet to the one we just added to
-    const targetSheetIndex = sheets.findIndex((s) => s.name === selectedSheet.trim());
+    const targetSheetIndex = sheets.findIndex((s) => s.name === sheetName);
     if (targetSheetIndex >= 0) {
       setActiveSheetIndex(targetSheetIndex);
     } else {
@@ -84,6 +87,8 @@ export function AddWordModal() {
     setTranslation('');
     setExampleEnglish('');
     setExampleVietnamese('');
+    setSelectedSheet('');
+    setNewSheetName('');
     setIsOpen(false);
   };
 
@@ -126,7 +131,8 @@ export function AddWordModal() {
                   {selectedSheet === 'new_sheet_option' && (
                     <Input
                       placeholder="Nhập tên buổi học mới"
-                      onChange={(e) => setSelectedSheet(e.target.value)}
+                      value={newSheetName}
+                      onChange={(e) => setNewSheetName(e.target.value)}
                       className="mt-2"
                       autoFocus
                     />
