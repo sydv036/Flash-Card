@@ -1,29 +1,5 @@
 [
   {
-    "lessonId": 2,
-    "title": "Audio buổi 2",
-    "is_display": false,
-    "items": [
-      {
-        "id": 1,
-        "image": "1.png",
-        "answers": [
-          {
-            "key": "A",
-            "en": "The men are putting on headphones.",
-            "vi": "Nguoi dan ong dang deo tai nghe."
-          },
-          {
-            "key": "B",
-            "en": "The men are getting up from their chairs.",
-            "vi": "Nhung nguoi dan ong dang dung day tu ghe."
-          }
-        ],
-        "correctAnswer": "A"
-      }
-    ]
-  },
-  {
     "lessonId": 14,
     "title": "Audio buổi 14",
     "is_display": true,
