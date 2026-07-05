@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, FolderOpen, Music, Image, CheckCircle2, Loader2, AlertCircle, FileAudio, FileImage, FileJson, BookOpen, Copy, Lock, Key, Trash2, Play, Pause, Volume2, Eye } from 'lucide-react';
+import { Upload, FolderOpen, Music, Image, CheckCircle2, Loader2, AlertCircle, FileAudio, FileImage, FileJson, BookOpen, Copy, Lock, Key, Trash2, Play, Pause, Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
