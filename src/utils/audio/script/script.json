@@ -6099,7 +6099,7 @@
   {
     "lessonId": 16,
     "title": "Audio buổi 16",
-    "is_display": true,
+    "is_display": false,
     "items": [
       {
         "id": 1,
