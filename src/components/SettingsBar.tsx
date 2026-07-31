@@ -1,5 +1,5 @@
 import { useTheme } from '@/context/ThemeContext';
-import { useFlashcard } from '@/context/FlashcardContext';
+import { useFlashcard } from '@/context/flashcard-context';
 import { Switch } from '@/components/ui/switch';
 import { Moon, Sun, Languages } from 'lucide-react';
 

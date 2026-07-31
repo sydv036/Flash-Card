@@ -1,7 +1,57 @@
 [
   {
-    "lessonId": 9,
-    "title": "Audio buổi 9",
+    "part": 1,
+    "lessonId": "buoi-2",
+    "lessonName": "Buổi 2",
+    "title": "TOEIC Part 1 - Buổi 2",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-3",
+    "lessonName": "Buổi 3",
+    "title": "TOEIC Part 1 - Buổi 3",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-4",
+    "lessonName": "Buổi 4",
+    "title": "TOEIC Part 1 - Buổi 4",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-5",
+    "lessonName": "Buổi 5",
+    "title": "TOEIC Part 1 - Buổi 5",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-6",
+    "lessonName": "Buổi 6",
+    "title": "TOEIC Part 1 - Buổi 6",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-7",
+    "lessonName": "Buổi 7",
+    "title": "TOEIC Part 1 - Buổi 7",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "lessonId": "buoi-9",
+    "lessonName": "Buổi 9",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 9",
     "is_display": true,
     "items": [
       {
@@ -817,8 +867,10 @@
     ]
   },
   {
-    "lessonId": 10,
-    "title": "Audio buổi 10",
+    "lessonId": "buoi-10",
+    "lessonName": "Buổi 10",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 10",
     "is_display": true,
     "items": [
       {
@@ -1634,8 +1686,10 @@
     ]
   },
   {
-    "lessonId": 11,
-    "title": "Audio buổi 11",
+    "lessonId": "buoi-11",
+    "lessonName": "Buổi 11",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 11",
     "is_display": true,
     "items": [
       {
@@ -2451,8 +2505,10 @@
     ]
   },
   {
-    "lessonId": 12,
-    "title": "Audio buổi 12",
+    "lessonId": "buoi-12",
+    "lessonName": "Buổi 12",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 12",
     "is_display": true,
     "items": [
       {
@@ -3349,8 +3405,10 @@
     ]
   },
   {
-    "lessonId": 13,
-    "title": "Audio buổi 13",
+    "lessonId": "buoi-13",
+    "lessonName": "Buổi 13",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 13",
     "is_display": true,
     "items": [
       {
@@ -4274,8 +4332,10 @@
     ]
   },
   {
-    "lessonId": 14,
-    "title": "Audio buổi 14",
+    "lessonId": "buoi-14",
+    "lessonName": "Buổi 14",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 14",
     "is_display": true,
     "items": [
       {
@@ -5172,8 +5232,10 @@
     ]
   },
   {
-    "lessonId": 15,
-    "title": "Audio buổi 15",
+    "lessonId": "buoi-15",
+    "lessonName": "Buổi 15",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 15",
     "is_display": true,
     "items": [
       {
@@ -6097,8 +6159,10 @@
     ]
   },
   {
-    "lessonId": 16,
-    "title": "Audio buổi 16",
+    "lessonId": "buoi-16",
+    "lessonName": "Buổi 16",
+    "part": 1,
+    "title": "TOEIC Part 1 - Buổi 16",
     "is_display": true,
     "items": [
       {
@@ -6912,5 +6976,45 @@
         "correctAnswer": "A"
       }
     ]
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-18",
+    "lessonName": "Buổi 18",
+    "title": "TOEIC Part 2 - Buổi 18",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-19",
+    "lessonName": "Buổi 19",
+    "title": "TOEIC Part 2 - Buổi 19",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-20",
+    "lessonName": "Buổi 20",
+    "title": "TOEIC Part 2 - Buổi 20",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-21",
+    "lessonName": "Buổi 21",
+    "title": "TOEIC Part 2 - Buổi 21",
+    "is_display": true,
+    "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-22",
+    "lessonName": "Buổi 22",
+    "title": "TOEIC Part 2 - Buổi 22",
+    "is_display": true,
+    "items": []
   }
 ]

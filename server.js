@@ -1,617 +1,751 @@
-import express from 'express';
-import multer from 'multer';
-import crypto from 'crypto';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import { commitChanges, readFile, getRepoPaths } from './github-api.js';
+import express from "express";
+import crypto from "crypto";
+import dotenv from "dotenv";
+import { commitChanges, readFile } from "./github-api.js";
+import { resolveLessonIdentity } from "./server/lesson-identity.js";
+import { renameLessonRecord } from "./server/lesson-registry.js";
+import {
+  createRequestRateLimiter,
+  requestRateLimitConfig,
+  trustLocalProxy,
+  trustProxyHops,
+} from "./server/request-rate-limit.js";
+import {
+  MAX_FILES_PER_INTENT,
+  MAX_MEDIA_SIZE,
+  buildMediaKey,
+  createReadUrl,
+  createUploadUrl,
+  deleteLessonMedia,
+  deleteObject,
+  deleteObjects,
+  isAllowedMediaKey,
+  lessonPrefixes,
+  listAllAudioFiles,
+  listLessonMedia,
+  listMediaLessonIndex,
+  parseLessonId,
+  r2ConfigurationStatus,
+  validateUploadFile,
+  verifyObject,
+  vietnameseR2Error,
+} from "./server/r2-storage.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3001;
+const SCRIPT_PATH = "src/utils/audio/script/script.json";
+const COOKIE_NAME = "fc_owner_auth";
+const rateLimitConfig = requestRateLimitConfig();
+const apiRateLimiter = createRequestRateLimiter(rateLimitConfig.api);
+const loginRateLimiter = createRequestRateLimiter(rateLimitConfig.login);
+const ownerWriteRateLimiter = createRequestRateLimiter(
+  rateLimitConfig.ownerWrite,
+);
 
-app.use(express.json());
+const proxyHops = trustProxyHops();
+app.set("trust proxy", proxyHops > 0 ? proxyHops : trustLocalProxy);
 
-// ─── Multer: lưu file vào RAM (không cần ổ cứng) ────────────────────────────
+app.use("/api", (req, res, next) => {
+  if (req.method === "OPTIONS" || req.path === "/health") return next();
+  return apiRateLimiter(req, res, next);
+});
+app.use(express.json({ limit: "1mb" }));
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    if (file.fieldname === 'audios') {
-      if (!file.mimetype.includes('audio') && !file.originalname.endsWith('.mp3')) {
-        return cb(new Error('Chỉ chấp nhận file MP3'));
-      }
-    }
-    if (file.fieldname === 'images') {
-      if (!file.mimetype.startsWith('image/')) {
-        return cb(new Error('Chỉ chấp nhận file ảnh'));
-      }
-    }
-    cb(null, true);
-  },
+function jsonError(res, status, message, extra = {}) {
+  return res.status(status).json({ success: false, message, ...extra });
+}
+
+function parseCookies(header = "") {
+  return Object.fromEntries(
+    header
+      .split(";")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const index = item.indexOf("=");
+        return index < 0
+          ? [item, ""]
+          : [item.slice(0, index), decodeURIComponent(item.slice(index + 1))];
+      }),
+  );
+}
+
+function authSecret() {
+  return process.env.OWNER_SESSION_SECRET || "";
+}
+
+function signExpiry(expires) {
+  return crypto
+    .createHmac("sha256", authSecret())
+    .update(String(expires))
+    .digest("hex");
+}
+
+function timingSafeEqualText(left, right) {
+  const a = Buffer.from(String(left));
+  const b = Buffer.from(String(right));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function isAuthenticated(req) {
+  const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
+  if (!token || !authSecret()) return false;
+  const [signature, expiresText] = token.split(".");
+  const expires = Number(expiresText);
+  if (!signature || !Number.isSafeInteger(expires) || Date.now() >= expires)
+    return false;
+  return timingSafeEqualText(signature, signExpiry(expiresText));
+}
+
+function requireOwner(req, res, next) {
+  if (!isAuthenticated(req))
+    return jsonError(
+      res,
+      401,
+      "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+    );
+  next();
+}
+
+// Mọi thao tác thay đổi dữ liệu (trừ đăng nhập) đều cần owner session ở server.
+app.use("/api", (req, res, next) => {
+  if (
+    ["GET", "HEAD", "OPTIONS"].includes(req.method) ||
+    req.path === "/auth/login"
+  )
+    return next();
+  return requireOwner(req, res, () => ownerWriteRateLimiter(req, res, next));
 });
 
-// ─── Upload endpoint ─────────────────────────────────────────────────────────
+app.post("/api/auth/login", loginRateLimiter, (req, res) => {
+  const passwords = (process.env.OWNER_PASSWORDS || process.env.VITE_PASS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const password = String(req.body?.password || "");
+  if (!passwords.length || !authSecret()) {
+    return jsonError(
+      res,
+      500,
+      "Máy chủ chưa cấu hình thông tin đăng nhập owner.",
+    );
+  }
+  const valid = passwords.some((candidate) =>
+    timingSafeEqualText(candidate, password),
+  );
+  if (!valid) return jsonError(res, 401, "Mật khẩu không chính xác.");
 
-app.post('/api/upload', (req, res) => {
-  const uploadFields = upload.fields([
-    { name: 'audios', maxCount: 200 },
-    { name: 'images', maxCount: 200 },
-  ]);
+  const configuredTtl = Number(
+    process.env.OWNER_AUTH_TTL_SECONDS || process.env.VITE_AUTH_TTL,
+  );
+  const ttlSeconds =
+    Number.isInteger(configuredTtl) && configuredTtl >= 60
+      ? Math.min(configuredTtl, 604800)
+      : 28800;
+  const expires = Date.now() + ttlSeconds * 1000;
+  const secure =
+    process.env.VERCEL || process.env.NODE_ENV === "production"
+      ? "; Secure"
+      : "";
+  res.setHeader(
+    "Set-Cookie",
+    `${COOKIE_NAME}=${signExpiry(expires)}.${expires}; HttpOnly; Max-Age=${ttlSeconds}; Path=/; SameSite=Strict${secure}`,
+  );
+  return res.json({ success: true, message: "Đăng nhập thành công." });
+});
 
-  uploadFields(req, res, async (err) => {
-    if (err) {
-      console.error('[Upload Error]', err.message);
-      return res.status(400).json({ success: false, message: err.message });
+app.get("/api/auth/verify", (req, res) => {
+  res.json({ success: true, authenticated: isAuthenticated(req) });
+});
+
+async function readScriptFromGitHub() {
+  const result = await readFile(SCRIPT_PATH);
+  if (!result) return { lessons: [] };
+  let parsed;
+  try {
+    parsed = JSON.parse(result.content);
+  } catch (error) {
+    throw new Error(
+      `File script.json không phải JSON hợp lệ: ${error.message}`,
+    );
+  }
+  const lessons = Array.isArray(parsed) ? parsed : [parsed];
+  return {
+    lessons: lessons.map((lesson) => {
+      const sourceId = lesson.lessonId ?? lesson.session;
+      const lessonId = parseLessonId(sourceId);
+      return {
+        ...lesson,
+        part: Number(lesson.part) || 1,
+        lessonId,
+        lessonName: String(
+          lesson.lessonName ||
+            (typeof sourceId === "number"
+              ? `Buổi ${sourceId}`
+              : sourceId || lessonId),
+        ),
+      };
+    }),
+  };
+}
+
+function scriptFile(lessons) {
+  return [
+    {
+      path: SCRIPT_PATH,
+      content: JSON.stringify(lessons, null, 2),
+      encoding: "utf-8",
+    },
+  ];
+}
+
+const lessonIdentity = (req, source = req.body) =>
+  resolveLessonIdentity({ source, params: req.params, query: req.query });
+
+app.post("/api/media/upload-intents", async (req, res) => {
+  try {
+    const { part, lessonId, lessonName } = lessonIdentity(req);
+    const files = req.body?.files;
+    if (!Array.isArray(files) || !files.length)
+      return jsonError(res, 400, "Vui lòng chọn ít nhất một file để tải lên.");
+    if (files.length > MAX_FILES_PER_INTENT) {
+      return jsonError(
+        res,
+        400,
+        `Mỗi đợt chỉ được tạo tối đa ${MAX_FILES_PER_INTENT} yêu cầu tải lên.`,
+      );
     }
 
-    const session = req.body.session;
-    if (!session || isNaN(Number(session))) {
-      return res.status(400).json({ success: false, message: 'Số buổi học không hợp lệ' });
-    }
-
-    const audios = req.files['audios'] || [];
-    const images = req.files['images'] || [];
-
-    if (audios.length === 0 && images.length === 0) {
-      return res.status(400).json({ success: false, message: 'Không có file nào được chọn' });
-    }
-
-    // Chuyển từng file thành entry cho GitHub commit
-    const filesToCommit = [];
-
-    for (const file of audios) {
-      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-      filesToCommit.push({
-        path: `src/utils/audio/Audio Buổi ${session}/${originalName}`,
-        content: file.buffer,
-        encoding: 'base64',
-      });
-    }
-
-    for (const file of images) {
-      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-      filesToCommit.push({
-        path: `src/assets/B${session}/${originalName}`,
-        content: file.buffer,
-        encoding: 'base64',
-      });
-    }
-
-    try {
-      // Lưu file vào local disk để đồng bộ môi trường dev local
+    const validFiles = [];
+    const invalidFiles = [];
+    for (const source of files) {
       try {
-        for (const file of audios) {
-          const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-          const localDir = path.join(process.cwd(), `src/utils/audio/Audio Buổi ${session}`);
-          if (!fs.existsSync(localDir)) {
-            fs.mkdirSync(localDir, { recursive: true });
-          }
-          fs.writeFileSync(path.join(localDir, originalName), file.buffer);
-        }
-        for (const file of images) {
-          const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-          const localDir = path.join(process.cwd(), `src/assets/B${session}`);
-          if (!fs.existsSync(localDir)) {
-            fs.mkdirSync(localDir, { recursive: true });
-          }
-          fs.writeFileSync(path.join(localDir, originalName), file.buffer);
-        }
-        console.log(`[Local Sync] Đã lưu các file upload vào ổ đĩa local`);
-      } catch (localErr) {
-        console.warn('[Local Sync Error] Không thể lưu file vào ổ đĩa local:', localErr.message);
+        validFiles.push({ source, ...validateUploadFile(source) });
+      } catch (error) {
+        invalidFiles.push({
+          filename:
+            source?.filename ||
+            source?.fileName ||
+            source?.name ||
+            "Không rõ tên",
+          message: error.message,
+        });
       }
-
-      await commitChanges({
-        filesToAdd: filesToCommit,
-        message: `[Upload] Buổi ${session}: ${audios.length} MP3, ${images.length} ảnh`,
-      });
-
-      console.log(`[Upload] Buổi ${session}: ${audios.length} MP3, ${images.length} ảnh → GitHub`);
-
-      res.json({
-        success: true,
-        message: `Tải lên thành công! ${audios.length} file MP3, ${images.length} ảnh cho Buổi ${session}`,
-        audios: audios.map(f => Buffer.from(f.originalname, 'latin1').toString('utf8')),
-        images: images.map(f => Buffer.from(f.originalname, 'latin1').toString('utf8')),
-      });
-    } catch (error) {
-      console.error('[Upload Error]', error);
-      res.status(500).json({ success: false, message: 'Lỗi đẩy file lên GitHub: ' + error.message });
     }
+    const uploadIntents = await Promise.all(
+      validFiles.map(async (file) => {
+        const key = buildMediaKey({
+          kind: file.kind,
+          part,
+          lessonId,
+          filename: file.filename,
+        });
+        return {
+          clientId: file.source.clientId,
+          filename: file.filename,
+          fileName: file.filename,
+          name: file.filename,
+          key,
+          contentType: file.contentType,
+          uploadUrl: await createUploadUrl({
+            key,
+            contentType: file.contentType,
+          }),
+          expiresIn: Math.min(
+            Math.max(Number(process.env.R2_UPLOAD_URL_TTL_SECONDS) || 300, 60),
+            900,
+          ),
+        };
+      }),
+    );
+    if (!uploadIntents.length) {
+      return jsonError(res, 400, "Không có file hợp lệ để tải lên.", {
+        invalidFiles,
+      });
+    }
+    res.json({
+      success: true,
+      message: invalidFiles.length
+        ? "Đã bỏ qua các file không hợp lệ."
+        : `Đã chuẩn bị ${uploadIntents.length} file để tải lên.`,
+      uploadIntents,
+      uploads: uploadIntents,
+      intents: uploadIntents,
+      invalidFiles,
+      maxFileSize: MAX_MEDIA_SIZE,
+      part,
+      lessonId,
+      lessonName,
+    });
+  } catch (error) {
+    console.error("[R2 Upload Intent]", error);
+    jsonError(res, 500, vietnameseR2Error(error));
+  }
+});
+
+app.post("/api/media/verify", async (req, res) => {
+  const files = req.body?.files || req.body?.objects;
+  if (
+    !Array.isArray(files) ||
+    !files.length ||
+    files.length > MAX_FILES_PER_INTENT
+  ) {
+    return jsonError(
+      res,
+      400,
+      `Danh sách xác minh phải có từ 1 đến ${MAX_FILES_PER_INTENT} file.`,
+    );
+  }
+  const verified = [];
+  const invalidFiles = [];
+  await Promise.all(
+    files.map(async (file) => {
+      const filename = String(
+        file?.filename ||
+          file?.fileName ||
+          file?.name ||
+          file?.key?.split("/").pop() ||
+          "Không rõ tên",
+      );
+      try {
+        if (!isAllowedMediaKey(file?.key))
+          throw new Error("Đường dẫn file không hợp lệ.");
+        const metadata = await verifyObject(file.key);
+        const expectedSize =
+          file.expectedSize === undefined
+            ? undefined
+            : Number(file.expectedSize);
+        const expectedType = file.contentType
+          ? String(file.contentType).toLowerCase()
+          : undefined;
+        const wrongSize =
+          metadata.size < 1 ||
+          metadata.size >= MAX_MEDIA_SIZE ||
+          (Number.isInteger(expectedSize) && metadata.size !== expectedSize);
+        const wrongType =
+          expectedType && metadata.contentType.toLowerCase() !== expectedType;
+        if (wrongSize || wrongType) {
+          await deleteObject(file.key);
+          const reason =
+            metadata.size >= MAX_MEDIA_SIZE
+              ? "File phải nhỏ hơn 2 MB và đã được xóa khỏi Cloudflare."
+              : "File tải lên không khớp dung lượng hoặc định dạng ban đầu.";
+          invalidFiles.push({ filename, key: file.key, message: reason });
+          return;
+        }
+        verified.push({ filename, key: file.key, ...metadata });
+      } catch (error) {
+        invalidFiles.push({
+          filename,
+          key: file?.key,
+          message: vietnameseR2Error(error),
+        });
+      }
+    }),
+  );
+  const success = invalidFiles.length === 0;
+  res.status(verified.length ? 200 : 400).json({
+    success,
+    message: success
+      ? `Đã xác minh ${verified.length} file thành công.`
+      : `Có ${invalidFiles.length} file tải lên không hợp lệ.`,
+    verified,
+    invalidFiles,
   });
 });
 
-// ─── Helper đọc script.json từ GitHub ────────────────────────────────────────
-
-async function readScriptFromGitHub() {
-  const result = await readFile('src/utils/audio/script/script.json');
-  if (!result) return { lessons: [] };
+app.get("/api/media/read-url", async (req, res) => {
   try {
-    const parsed = JSON.parse(result.content);
-    return { lessons: Array.isArray(parsed) ? parsed : [parsed] };
-  } catch {
-    return { lessons: [] };
-  }
-}
-
-// ─── Merge script JSON endpoint ──────────────────────────────────────────────
-
-app.post('/api/merge-script', async (req, res) => {
-  const { session, items, is_display } = req.body;
-
-  if (!session || isNaN(Number(session)) || Number(session) <= 0) {
-    return res.status(400).json({ success: false, message: 'Số buổi học không hợp lệ' });
-  }
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ success: false, message: '"items" phải là mảng không rỗng' });
-  }
-
-  const newLesson = {
-    lessonId: Number(session),
-    title: `Audio buổi ${session}`,
-    is_display: is_display !== undefined ? Boolean(is_display) : true,
-    items,
-  };
-
-  try {
-    const { lessons } = await readScriptFromGitHub();
-
-    const existingIdx = lessons.findIndex(l => l.lessonId === newLesson.lessonId);
-    const isUpdate = existingIdx >= 0;
-    if (isUpdate) {
-      lessons[existingIdx] = newLesson;
-    } else {
-      lessons.push(newLesson);
-      lessons.sort((a, b) => a.lessonId - b.lessonId);
-    }
-
-    // Cập nhật local script.json
-    try {
-      const localScriptPath = path.join(process.cwd(), 'src/utils/audio/script/script.json');
-      fs.writeFileSync(localScriptPath, JSON.stringify(lessons, null, 2), 'utf-8');
-      console.log('[Local Sync] Đã cập nhật script.json local trong merge-script');
-    } catch (err) {
-      console.warn('[Local Sync Warning] Không thể ghi script.json local:', err.message);
-    }
-
-    await commitChanges({
-      filesToAdd: [{
-        path: 'src/utils/audio/script/script.json',
-        content: JSON.stringify(lessons, null, 2),
-        encoding: 'utf-8',
-      }],
-      message: `[Script] ${isUpdate ? 'Cập nhật' : 'Thêm'} buổi ${session} (${items.length} câu hỏi)`,
-    });
-
-    console.log(`[Script] ${isUpdate ? 'Đã cập nhật' : 'Đã thêm'} buổi ${session} → GitHub`);
-
+    const key = String(req.query.key || "");
+    const signed = await createReadUrl(key);
     res.json({
       success: true,
-      message: isUpdate
-        ? `Đã cập nhật buổi ${session} (${items.length} câu hỏi)`
-        : `Đã thêm buổi ${session} (${items.length} câu hỏi) — tổng ${lessons.length} buổi`,
-      lessonId: newLesson.lessonId,
-      title: newLesson.title,
+      key,
+      ...signed,
+      expiresAt: Date.now() + signed.expiresIn * 1000,
+    });
+  } catch (error) {
+    jsonError(
+      res,
+      isAllowedMediaKey(req.query.key) ? 500 : 400,
+      vietnameseR2Error(error),
+    );
+  }
+});
+
+app.get("/api/media/audio-files", async (_req, res) => {
+  try {
+    const files = await listAllAudioFiles();
+    res.json({ success: true, files });
+  } catch (error) {
+    console.error("[R2 Audio Files]", error);
+    jsonError(res, 500, vietnameseR2Error(error));
+  }
+});
+
+// Endpoint cũ không nhận binary qua Vercel nữa.
+app.post("/api/upload", (_req, res) =>
+  jsonError(
+    res,
+    410,
+    "Cách tải file cũ đã ngừng hỗ trợ. Vui lòng tải trực tiếp lên Server.",
+  ),
+);
+
+app.post("/api/lessons/register", async (req, res) => {
+  try {
+    const { part, lessonId, lessonName } = lessonIdentity(req);
+    const { lessons } = await readScriptFromGitHub();
+    const existing = lessons.find(
+      (lesson) => lesson.part === part && lesson.lessonId === lessonId,
+    );
+    if (existing) {
+      return res.json({
+        success: true,
+        created: false,
+        part,
+        lessonId,
+        lessonName: existing.lessonName || lessonName,
+      });
+    }
+    lessons.push({
+      part,
+      lessonId,
+      lessonName,
+      title: `TOEIC Part ${part} - ${lessonName}`,
+      is_display: true,
+      items: [],
+    });
+    lessons.sort(
+      (a, b) =>
+        a.part - b.part ||
+        a.lessonId.localeCompare(b.lessonId, "vi", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+    );
+    await commitChanges({
+      filesToAdd: scriptFile(lessons),
+      message: `[Lessons] Thêm Part ${part} - ${lessonName} (${lessonId})`,
+    });
+    res.json({ success: true, created: true, part, lessonId, lessonName });
+  } catch (error) {
+    console.error("[Register Lesson]", error);
+    jsonError(res, error.status === 409 ? 409 : 500, error.message);
+  }
+});
+
+app.post("/api/merge-script", async (req, res) => {
+  try {
+    const { part, lessonId, lessonName } = lessonIdentity(req);
+    const { items, is_display } = req.body;
+    if (!Array.isArray(items) || !items.length)
+      return jsonError(res, 400, '"items" phải là mảng không rỗng.');
+    const { lessons } = await readScriptFromGitHub();
+    const newLesson = {
+      lessonId,
+      lessonName,
+      part,
+      title: String(req.body.title || `TOEIC Part ${part} - ${lessonName}`),
+      is_display: is_display === undefined ? true : Boolean(is_display),
+      items,
+    };
+    const index = lessons.findIndex(
+      (lesson) => lesson.part === part && lesson.lessonId === lessonId,
+    );
+    const isUpdate = index >= 0;
+    if (isUpdate) lessons[index] = newLesson;
+    else lessons.push(newLesson);
+    lessons.sort(
+      (a, b) =>
+        a.part - b.part ||
+        a.lessonId.localeCompare(b.lessonId, "vi", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+    );
+    await commitChanges({
+      filesToAdd: scriptFile(lessons),
+      message: `[Script] ${isUpdate ? "Cập nhật" : "Thêm"} Part ${part} - ${lessonName} (${lessonId}, ${items.length} câu hỏi)`,
+    });
+    res.json({
+      success: true,
+      message: `${isUpdate ? "Đã cập nhật" : "Đã thêm"} Part ${part} - ${lessonName}.`,
+      part,
+      lessonId,
+      lessonName,
       itemCount: items.length,
       totalLessons: lessons.length,
     });
   } catch (error) {
-    console.error('[Merge Script Error]', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("[Merge Script]", error);
+    jsonError(res, 500, error.message);
   }
 });
 
-// ─── GET /api/lessons ────────────────────────────────────────────────────────
-
-app.get('/api/lessons', async (req, res) => {
+app.get("/api/lessons", async (_req, res) => {
   try {
-    const { lessons } = await readScriptFromGitHub();
-    const repoPaths = await getRepoPaths();
-
-    const lessonIds = new Set(lessons.map(l => l.lessonId));
-
-    // Quét tree để tìm thư mục Audio và Image
-    // Normalize NFC để khớp cả trường hợp GitHub lưu tên thư mục dạng NFD (ký tự Unicode phân tách)
-    for (const p of repoPaths) {
-      const normalized = p.normalize('NFC');
-      // Dùng /i để match cả "Audio buổi" (b thường) lẫn "Audio Buổi" (B hoa)
-      const audioMatch = normalized.match(/^src\/utils\/audio\/audio bu\u1ed5i (\d+)\//i);
-      if (audioMatch) lessonIds.add(Number(audioMatch[1]));
-
-      const imageMatch = normalized.match(/^src\/assets\/B(\d+)\//);
-      if (imageMatch) lessonIds.add(Number(imageMatch[1]));
+    const [{ lessons }, mediaLessons] = await Promise.all([
+      readScriptFromGitHub(),
+      listMediaLessonIndex(),
+    ]);
+    const records = new Map();
+    for (const lesson of lessons) {
+      const id = `${lesson.part}:${lesson.lessonId}`;
+      records.set(id, {
+        part: lesson.part,
+        lessonId: lesson.lessonId,
+        lessonName: lesson.lessonName || lesson.lessonId,
+        title:
+          lesson.title ||
+          `TOEIC Part ${lesson.part} - ${lesson.lessonName || lesson.lessonId}`,
+        is_display: lesson.is_display ?? true,
+        itemCount: Array.isArray(lesson.items) ? lesson.items.length : 0,
+        hasScript: true,
+        hasAudio: false,
+        hasImage: false,
+      });
     }
-
-    // Kiểm tra audio theo cả 2 dạng tên thư mục (B hoa / b thường)
-    const hasAudioForId = (id) => [
-      `src/utils/audio/Audio Bu\u1ed5i ${id}/`,
-      `src/utils/audio/Audio bu\u1ed5i ${id}/`,
-    ].some(prefix => [...repoPaths].some(p => p.normalize('NFC').startsWith(prefix)));
-
-    const list = Array.from(lessonIds)
-      .sort((a, b) => a - b)
-      .map(id => {
-        const scriptLesson = lessons.find(l => l.lessonId === id);
-        const hasAudio = hasAudioForId(id);
-        const hasImage = [...repoPaths].some(p => p.startsWith(`src/assets/B${id}/`));
-        const hasScript = !!scriptLesson;
-
-        return {
-          lessonId: id,
-          title: scriptLesson ? scriptLesson.title : `Buổi ${id}`,
-          is_display: scriptLesson?.is_display !== undefined ? scriptLesson.is_display : true,
-          itemCount: scriptLesson?.items?.length || 0,
-          hasScript,
-          hasAudio,
-          hasImage,
-        };
-      })
-      // Chỉ hiện buổi có ít nhất 1 trong 3: script, audio, hoặc ảnh
-      .filter(l => l.hasScript || l.hasAudio || l.hasImage);
-
+    for (const media of mediaLessons) {
+      const id = `${media.part}:${media.lessonId}`;
+      records.set(id, {
+        lessonName: media.lessonId,
+        title: `TOEIC Part ${media.part} - ${media.lessonId}`,
+        is_display: true,
+        itemCount: 0,
+        hasScript: false,
+        ...records.get(id),
+        ...media,
+      });
+    }
+    const list = [...records.values()].sort(
+      (a, b) =>
+        a.part - b.part ||
+        a.lessonId.localeCompare(b.lessonId, "vi", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+    );
     res.json({ success: true, lessons: list });
   } catch (error) {
-    console.error('[Lessons Error]', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("[Lessons]", error);
+    jsonError(
+      res,
+      500,
+      /R2|Cloudflare/i.test(error.message)
+        ? vietnameseR2Error(error)
+        : error.message,
+    );
   }
 });
 
-// ─── PATCH /api/lessons/:lessonId/display ────────────────────────────────────
-
-app.patch('/api/lessons/:lessonId/display', async (req, res) => {
-  const lessonId = Number(req.params.lessonId);
-  const { is_display } = req.body;
-
-  if (isNaN(lessonId)) {
-    return res.status(400).json({ success: false, message: 'lessonId không hợp lệ' });
-  }
-  if (typeof is_display !== 'boolean') {
-    return res.status(400).json({ success: false, message: 'is_display phải là boolean' });
-  }
-
+app.get("/api/lessons/:lessonId/script", async (req, res) => {
   try {
+    const { part, lessonId } = lessonIdentity(req, req.query);
     const { lessons } = await readScriptFromGitHub();
-    const idx = lessons.findIndex(l => l.lessonId === lessonId);
-    if (idx < 0) {
-      return res.status(404).json({ success: false, message: `Không tìm thấy buổi ${lessonId} trong script` });
-    }
-
-    lessons[idx].is_display = is_display;
-
-    // Cập nhật local script.json
-    try {
-      const localScriptPath = path.join(process.cwd(), 'src/utils/audio/script/script.json');
-      fs.writeFileSync(localScriptPath, JSON.stringify(lessons, null, 2), 'utf-8');
-      console.log('[Local Sync] Đã cập nhật script.json local trong display toggle');
-    } catch (err) {
-      console.warn('[Local Sync Warning] Không thể ghi script.json local:', err.message);
-    }
-
-    await commitChanges({
-      filesToAdd: [{
-        path: 'src/utils/audio/script/script.json',
-        content: JSON.stringify(lessons, null, 2),
-        encoding: 'utf-8',
-      }],
-      message: `[Lessons] Buổi ${lessonId} → ${is_display ? 'hiển thị' : 'ẩn'}`,
-    });
-
-    console.log(`[Lessons] Buổi ${lessonId} is_display → ${is_display}`);
-    res.json({ success: true, lessonId, is_display });
+    const lesson = lessons.find(
+      (item) => item.part === part && item.lessonId === lessonId,
+    );
+    if (!lesson)
+      return jsonError(
+        res,
+        404,
+        `Không tìm thấy nội dung Part ${part} - buổi ${lessonId}.`,
+      );
+    res.json({ success: true, lesson });
   } catch (error) {
-    console.error('[Display Error]', error);
-    res.status(500).json({ success: false, message: error.message });
+    jsonError(res, 500, error.message);
   }
 });
 
-// ─── DELETE /api/lessons/:lessonId ───────────────────────────────────────────
-
-app.delete('/api/lessons/:lessonId', async (req, res) => {
-  const lessonId = Number(req.params.lessonId);
-  if (isNaN(lessonId)) {
-    return res.status(400).json({ success: false, message: 'lessonId không hợp lệ' });
-  }
-
-  const types = req.query.types ? req.query.types.split(',') : ['script', 'audio', 'image'];
-
+app.patch("/api/lessons/:lessonId/name", async (req, res) => {
   try {
-    const pathsToDelete = [];
-    const filesToAdd = [];
-    const deletedItems = [];
-
-    if (types.includes('audio') || types.includes('image')) {
-      // Lấy repo paths để tìm đúng tên thư mục (B hoa / b thường)
-      const repoPaths = await getRepoPaths();
-
-      if (types.includes('audio')) {
-        // Tìm đúng prefix thực tế trên GitHub (case-insensitive)
-        const audioRegex = new RegExp(`^src/utils/audio/audio buổi ${lessonId}/`, 'i');
-        const actualAudioPrefix = [...repoPaths]
-          .map(p => p.normalize('NFC'))
-          .find(p => audioRegex.test(p));
-
-        if (actualAudioPrefix) {
-          // Lấy phần thư mục (bỏ tên file ở cuối)
-          const folderPath = actualAudioPrefix.replace(/\/[^/]+$/, '');
-          pathsToDelete.push(folderPath);
-          deletedItems.push('Audio');
-
-          // Xóa local folder
-          try {
-            const localAudioDir = path.join(process.cwd(), folderPath);
-            if (fs.existsSync(localAudioDir)) {
-              fs.rmSync(localAudioDir, { recursive: true, force: true });
-              console.log(`[Local Sync] Đã xóa local audio folder: ${localAudioDir}`);
-            }
-          } catch (err) {
-            console.warn('[Local Sync Warning] Không thể xóa local audio folder:', err.message);
-          }
-        } else {
-          console.warn(`[Delete] Không tìm thấy thư mục audio cho buổi ${lessonId} trên GitHub`);
-        }
-
-        // Dự phòng: Xóa các folder local thông dụng
-        try {
-          const localAudioDir1 = path.join(process.cwd(), `src/utils/audio/Audio Buổi ${lessonId}`);
-          const localAudioDir2 = path.join(process.cwd(), `src/utils/audio/Audio buổi ${lessonId}`);
-          if (fs.existsSync(localAudioDir1)) {
-            fs.rmSync(localAudioDir1, { recursive: true, force: true });
-            console.log(`[Local Sync] Đã xóa dự phòng: ${localAudioDir1}`);
-          }
-          if (fs.existsSync(localAudioDir2)) {
-            fs.rmSync(localAudioDir2, { recursive: true, force: true });
-            console.log(`[Local Sync] Đã xóa dự phòng: ${localAudioDir2}`);
-          }
-        } catch (err) {}
-      }
-
-      if (types.includes('image')) {
-        pathsToDelete.push(`src/assets/B${lessonId}`);
-        deletedItems.push('Ảnh');
-
-        // Xóa local folder
-        try {
-          const localImgDir = path.join(process.cwd(), `src/assets/B${lessonId}`);
-          if (fs.existsSync(localImgDir)) {
-            fs.rmSync(localImgDir, { recursive: true, force: true });
-            console.log(`[Local Sync] Đã xóa local image folder: ${localImgDir}`);
-          }
-        } catch (err) {
-          console.warn('[Local Sync Warning] Không thể xóa local image folder:', err.message);
-        }
-      }
+    const { part, lessonId, lessonName } = lessonIdentity(req);
+    const { lessons } = await readScriptFromGitHub();
+    const existsInGit = lessons.some(
+      (lesson) => lesson.part === part && lesson.lessonId === lessonId,
+    );
+    let mediaExists = false;
+    if (!existsInGit) {
+      const mediaLessons = await listMediaLessonIndex();
+      mediaExists = mediaLessons.some(
+        (lesson) => lesson.part === part && lesson.lessonId === lessonId,
+      );
     }
+    const renamed = renameLessonRecord({
+      lessons,
+      part,
+      lessonId,
+      lessonName,
+      mediaExists,
+    });
+    await commitChanges({
+      filesToAdd: scriptFile(renamed.lessons),
+      message: `[Lessons] Đổi tên Part ${part} - ${lessonId} → ${renamed.lesson.lessonName}`,
+    });
+    res.json({
+      success: true,
+      message: `Đã đổi tên buổi học thành ${renamed.lesson.lessonName}.`,
+      part,
+      lessonId,
+      lessonName: renamed.lesson.lessonName,
+      created: renamed.created,
+    });
+  } catch (error) {
+    console.error("[Rename Lesson]", error);
+    jsonError(res, error.status || 500, error.message);
+  }
+});
 
-    if (types.includes('script')) {
+app.patch("/api/lessons/:lessonId/display", async (req, res) => {
+  try {
+    const { part, lessonId } = lessonIdentity(req);
+    if (typeof req.body.is_display !== "boolean")
+      return jsonError(res, 400, "is_display phải là boolean.");
+    const { lessons } = await readScriptFromGitHub();
+    const index = lessons.findIndex(
+      (lesson) => lesson.part === part && lesson.lessonId === lessonId,
+    );
+    if (index < 0)
+      return jsonError(
+        res,
+        404,
+        `Không tìm thấy Part ${part} - buổi ${lessonId}.`,
+      );
+    lessons[index].is_display = req.body.is_display;
+    await commitChanges({
+      filesToAdd: scriptFile(lessons),
+      message: `[Lessons] Part ${part} - buổi ${lessonId} → ${req.body.is_display ? "hiển thị" : "ẩn"}`,
+    });
+    res.json({
+      success: true,
+      message: "Đã cập nhật trạng thái hiển thị.",
+      part,
+      lessonId,
+      is_display: req.body.is_display,
+    });
+  } catch (error) {
+    jsonError(res, 500, error.message);
+  }
+});
+
+app.get("/api/lessons/:lessonId/files", async (req, res) => {
+  try {
+    const { part, lessonId } = lessonIdentity(req, req.query);
+    const files = await listLessonMedia(part, lessonId);
+    res.json({ success: true, part, lessonId, ...files });
+  } catch (error) {
+    jsonError(res, 500, vietnameseR2Error(error));
+  }
+});
+
+app.delete("/api/lessons/:lessonId/files", async (req, res) => {
+  try {
+    const { part, lessonId } = lessonIdentity(req);
+    const keys = req.body?.keys || req.body?.paths;
+    if (!Array.isArray(keys) || !keys.length)
+      return jsonError(res, 400, "Danh sách file cần xóa không hợp lệ.");
+    const prefixes = lessonPrefixes(part, lessonId);
+    const allowed = (key) =>
+      (key.startsWith(prefixes.audio) || key.startsWith(prefixes.image)) &&
+      isAllowedMediaKey(key);
+    const rejected = keys.filter((key) => !allowed(String(key)));
+    if (rejected.length)
+      return jsonError(
+        res,
+        403,
+        "Có file nằm ngoài Part hoặc buổi học đã chọn.",
+        { invalidFiles: rejected },
+      );
+    const count = await deleteObjects(keys.map(String));
+    res.json({
+      success: true,
+      message: `Đã xóa ${count} file khỏi Server.`,
+      deleted: count,
+    });
+  } catch (error) {
+    jsonError(res, 500, vietnameseR2Error(error));
+  }
+});
+
+app.delete("/api/lessons/:lessonId", async (req, res) => {
+  try {
+    const { part, lessonId } = lessonIdentity(req);
+    const requested = String(req.query.types || "script,audio,image")
+      .split(",")
+      .filter((type) => ["script", "audio", "image"].includes(type));
+    if (!requested.length)
+      return jsonError(res, 400, "Loại dữ liệu cần xóa không hợp lệ.");
+    let scriptDeleted = false;
+    if (requested.includes("script")) {
       const { lessons } = await readScriptFromGitHub();
-      const idx = lessons.findIndex(l => l.lessonId === lessonId);
-      if (idx >= 0) {
-        lessons.splice(idx, 1);
-        filesToAdd.push({
-          path: 'src/utils/audio/script/script.json',
-          content: JSON.stringify(lessons, null, 2),
-          encoding: 'utf-8',
+      const remaining = lessons.filter(
+        (lesson) => !(lesson.part === part && lesson.lessonId === lessonId),
+      );
+      if (remaining.length !== lessons.length) {
+        await commitChanges({
+          filesToAdd: scriptFile(remaining),
+          message: `[Delete] Xóa script Part ${part} - buổi ${lessonId}`,
         });
-        deletedItems.push('Script');
-
-        // Cập nhật script.json ở local
-        try {
-          const localScriptPath = path.join(process.cwd(), 'src/utils/audio/script/script.json');
-          fs.writeFileSync(localScriptPath, JSON.stringify(lessons, null, 2), 'utf-8');
-          console.log('[Local Sync] Đã cập nhật script.json local');
-        } catch (err) {
-          console.warn('[Local Sync Warning] Không thể cập nhật script.json local:', err.message);
-        }
+        scriptDeleted = true;
       }
     }
-
-    if (deletedItems.length === 0) {
-      return res.json({ success: true, message: `Không có dữ liệu nào được xóa cho buổi ${lessonId}` });
+    try {
+      const mediaTypes = requested.filter((type) => type !== "script");
+      const mediaDeleted = mediaTypes.length
+        ? await deleteLessonMedia(part, lessonId, mediaTypes)
+        : 0;
+      res.json({
+        success: true,
+        message: `Đã xóa dữ liệu Part ${part} - buổi ${lessonId}.`,
+        scriptDeleted,
+        mediaDeleted,
+      });
+    } catch (error) {
+      jsonError(
+        res,
+        502,
+        "Nội dung JSON đã cập nhật nhưng chưa xóa hết file trên Server. Vui lòng thử xóa lại.",
+        { partial: scriptDeleted, detail: vietnameseR2Error(error) },
+      );
     }
-
-    await commitChanges({
-      filesToAdd: filesToAdd.length > 0 ? filesToAdd : undefined,
-      pathsToDelete: pathsToDelete.length > 0 ? pathsToDelete : undefined,
-      message: `[Delete] Xóa ${deletedItems.join(', ')} buổi ${lessonId}`,
-    });
-
-    console.log(`[Delete] Xóa ${deletedItems.join(', ')} buổi ${lessonId} → GitHub`);
-    res.json({ success: true, message: `Đã xóa ${deletedItems.join(', ')} buổi ${lessonId} thành công` });
   } catch (error) {
-    console.error('[Delete Error]', error);
-    res.status(500).json({ success: false, message: error.message });
+    jsonError(res, 500, error.message);
   }
 });
 
-// ─── GET /api/lessons/:lessonId/files ────────────────────────────────────────
+app.get("/api/files/raw", (_req, res) =>
+  jsonError(res, 410, "Media hiện được đọc qua URL tạm thời của Server."),
+);
 
-app.get('/api/lessons/:lessonId/files', async (req, res) => {
-  const lessonId = Number(req.params.lessonId);
-  if (isNaN(lessonId)) {
-    return res.status(400).json({ success: false, message: 'lessonId không hợp lệ' });
-  }
-
-  try {
-    const repoPaths = await getRepoPaths();
-    const normalizedPaths = Array.from(repoPaths).map(p => p.normalize('NFC'));
-
-    const audioPrefix1 = `src/utils/audio/Audio Buổi ${lessonId}/`.normalize('NFC');
-    const audioPrefix2 = `src/utils/audio/Audio buổi ${lessonId}/`.normalize('NFC');
-    const imagePrefix = `src/assets/B${lessonId}/`.normalize('NFC');
-
-    const audios = [];
-    const images = [];
-
-    for (const p of normalizedPaths) {
-      if (p.startsWith(audioPrefix1) || p.startsWith(audioPrefix2)) {
-        const name = p.split('/').pop();
-        audios.push({ name, path: p });
-      } else if (p.startsWith(imagePrefix)) {
-        const name = p.split('/').pop();
-        images.push({ name, path: p });
-      }
-    }
-
-    const naturalSort = (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'vi', { numeric: true });
-    audios.sort(naturalSort);
-    images.sort(naturalSort);
-
-    res.json({ success: true, audios, images });
-  } catch (error) {
-    console.error('[Get Files Error]', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+app.get("/api/health", (_req, res) => {
+  const r2Config = r2ConfigurationStatus();
+  res.json({
+    status:
+      r2Config.readWrite && r2Config.adminDelete
+        ? "ok"
+        : "configuration-required",
+    storage: "cloudflare-r2",
+    r2: r2Config,
+    message:
+      r2Config.readWrite && r2Config.adminDelete
+        ? "Server đã được cấu hình đầy đủ."
+        : "Thiếu biến môi trường Server. Vui lòng kiểm tra file .env khi chạy local hoặc cấu hình Environment Variables trên Vercel.",
+    time: new Date().toISOString(),
+  });
 });
 
-// ─── DELETE /api/lessons/:lessonId/files ─────────────────────────────────────
-
-app.delete('/api/lessons/:lessonId/files', async (req, res) => {
-  const lessonId = Number(req.params.lessonId);
-  if (isNaN(lessonId)) {
-    return res.status(400).json({ success: false, message: 'lessonId không hợp lệ' });
-  }
-
-  const { paths } = req.body;
-  if (!paths || !Array.isArray(paths) || paths.length === 0) {
-    return res.status(400).json({ success: false, message: 'Danh sách paths để xóa không hợp lệ' });
-  }
-
-  try {
-    // Xóa các file local tương ứng
-    for (const fileToDelete of paths) {
-      const absoluteTarget = path.resolve(process.cwd(), fileToDelete);
-      
-      const absoluteAudioDir1 = path.resolve(process.cwd(), `src/utils/audio/Audio Buổi ${lessonId}`);
-      const absoluteAudioDir2 = path.resolve(process.cwd(), `src/utils/audio/Audio buổi ${lessonId}`);
-      const absoluteImageDir = path.resolve(process.cwd(), `src/assets/B${lessonId}`);
-      
-      const isInsideAllowedDir = absoluteTarget.startsWith(absoluteAudioDir1 + path.sep) ||
-                                 absoluteTarget.startsWith(absoluteAudioDir2 + path.sep) ||
-                                 absoluteTarget.startsWith(absoluteImageDir + path.sep);
-
-      if (!isInsideAllowedDir) {
-        return res.status(403).json({ success: false, message: `Từ chối xóa file ngoài phạm vi buổi học: ${fileToDelete}` });
-      }
-
-      try {
-        if (fs.existsSync(absoluteTarget)) {
-          fs.rmSync(absoluteTarget);
-          console.log(`[Local Sync] Đã xóa file local: ${absoluteTarget}`);
-        }
-      } catch (localErr) {
-        console.warn(`[Local Sync Warning] Không thể xóa file local ${fileToDelete}:`, localErr.message);
-      }
-    }
-
-    await commitChanges({
-      pathsToDelete: paths,
-      message: `[Delete] Xóa ${paths.length} file tùy chọn của buổi ${lessonId}`,
-    });
-
-    console.log(`[Delete] Xóa ${paths.length} file tùy chọn của buổi ${lessonId} → GitHub`);
-    res.json({ success: true, message: `Đã xóa ${paths.length} file tùy chọn thành công` });
-  } catch (error) {
-    console.error('[Delete Files Error]', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+app.use((error, _req, res, _next) => {
+  console.error("[API Error]", error);
+  jsonError(res, 500, "Máy chủ gặp lỗi. Vui lòng thử lại.");
 });
-
-// ─── GET /api/files/raw ──────────────────────────────────────────────────────
-
-app.get('/api/files/raw', (req, res) => {
-  const filePath = req.query.path;
-  if (!filePath) return res.status(400).send('Path is required');
-  
-  const absoluteTarget = path.resolve(process.cwd(), filePath);
-  const absoluteAudioDir = path.resolve(process.cwd(), 'src/utils/audio');
-  const absoluteAssetsDir = path.resolve(process.cwd(), 'src/assets');
-  
-  const isInsideAllowedDir = absoluteTarget.startsWith(absoluteAudioDir + path.sep) ||
-                             absoluteTarget.startsWith(absoluteAssetsDir + path.sep);
-                             
-  if (!isInsideAllowedDir) {
-    return res.status(403).send('Access denied');
-  }
-  
-  if (!fs.existsSync(absoluteTarget)) {
-    return res.status(404).send('File not found');
-  }
-  res.sendFile(absoluteTarget);
-});
-
-// ─── Health check ────────────────────────────────────────────────────────────
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
-});
-
-// ─── Auth endpoints (giữ nguyên logic cũ nhưng đổi sang Stateless) ───────────
-
-app.post('/api/auth/login', (req, res) => {
-  const { password } = req.body;
-  try {
-    // Lấy password từ biến môi trường VITE_PASS (hỗ trợ nhiều mật khẩu cách nhau bằng dấu phẩy)
-    const envPass = process.env.VITE_PASS || '';
-    const allowedPasswords = envPass.split(',').map(p => p.trim()).filter(Boolean);
-
-    if (allowedPasswords.length === 0) {
-      console.error('[Auth Error] VITE_PASS chưa được cấu hình trong file .env');
-      return res.status(500).json({ success: false, message: 'Lỗi cấu hình máy chủ' });
-    }
-
-    if (allowedPasswords.includes(password)) {
-      // Lấy thời gian sống (TTL) của cookie từ env, tính bằng giây. Mặc định 180s
-      const ttlSeconds = parseInt(process.env.VITE_AUTH_TTL, 10) || 18000000;
-
-      // Tạo token Stateless chứa Expiry + Signature để không bị mất khi nodemon/vercel restart
-      const expires = Date.now() + (ttlSeconds * 1000);
-      const secret = process.env.GITHUB_TOKEN || process.env.VITE_PASS || 'default_secret';
-      const signature = crypto.createHmac('sha256', secret).update(expires.toString()).digest('hex');
-      const token = `${signature}.${expires}`;
-
-      res.setHeader('Set-Cookie', `fc_owner_auth=${token}; HttpOnly; Max-Age=${ttlSeconds}; Path=/; SameSite=Strict`);
-      return res.json({ success: true });
-    }
-  } catch (err) {
-    console.error('[Auth Error]', err);
-  }
-  res.status(401).json({ success: false, message: 'Mật khẩu không chính xác' });
-});
-
-app.get('/api/auth/verify', (req, res) => {
-  const cookieStr = req.headers.cookie || '';
-  const match = cookieStr.match(/fc_owner_auth=([^;]+)/);
-  const token = match ? match[1] : null;
-
-  if (token) {
-    const parts = token.split('.');
-    if (parts.length === 2) {
-      const [signature, expiresStr] = parts;
-      const expires = parseInt(expiresStr, 10);
-
-      if (Date.now() < expires) {
-        const secret = process.env.GITHUB_TOKEN || process.env.VITE_PASS || 'default_secret';
-        const expectedSignature = crypto.createHmac('sha256', secret).update(expiresStr).digest('hex');
-
-        if (signature === expectedSignature) {
-          return res.json({ success: true, authenticated: true });
-        }
-      }
-    }
-  }
-
-  return res.json({ success: true, authenticated: false });
-});
-
-// ─── Start server (chỉ khi chạy local, bỏ qua trên Vercel) ─────────────────
 
 if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`[Server] API chạy tại http://localhost:${PORT}`);
-  });
+  app.listen(PORT, () =>
+    console.log(`[Server] API chạy tại http://localhost:${PORT}`),
+  );
 }
 
 export default app;

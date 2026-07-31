@@ -8,9 +8,13 @@
     "server": "nodemon --ignore src/ --ext js,json,env server.js",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "node --test scripts/*.test.mjs server/*.test.js",
+    "migrate:r2": "node scripts/migrate-media-to-r2.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1100.0",
+    "@aws-sdk/s3-request-presigner": "^3.1100.0",
     "@fontsource-variable/geist": "^5.2.8",
     "@google-cloud/text-to-speech": "^6.4.0",
     "@tailwindcss/vite": "^4.2.2",
@@ -22,6 +26,7 @@
     "dotenv": "^17.3.1",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.6.1",
     "file-saver": "^2.0.5",
     "lucide-react": "^0.577.0",
     "multer": "^2.1.1",

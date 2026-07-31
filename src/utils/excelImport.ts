@@ -1,81 +1,40 @@
 import ExcelJS from 'exceljs';
 import type { FlashcardSheet, FlashcardWord } from '@/types/flashcard';
 
-/**
- * Expected column headers in each sheet of the Excel file.
- */
-const EXPECTED_HEADERS = [
-  'English',
-  'Work Type',
-  'Translation',
-  'Example English',
-  'Example Vietnamese',
-] as const;
+const REQUIRED_HEADERS = ['English', 'Translation', 'Example English', 'Example Vietnamese'] as const;
 
-/**
- * Parse an Excel (.xlsx) file and extract flashcard data from all sheets.
- * Each sheet becomes a FlashcardSheet with its words.
- */
 export async function parseExcelFile(file: File): Promise<FlashcardSheet[]> {
-  const arrayBuffer = await file.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(arrayBuffer);
-
+  await workbook.xlsx.load(await file.arrayBuffer());
   const sheets: FlashcardSheet[] = [];
 
-  workbook.eachSheet((worksheet) => {
-    const words: FlashcardWord[] = [];
-
-    // Get header row to map column indices
-    const headerRow = worksheet.getRow(1);
-    const columnMap: Record<string, number> = {};
-
-    headerRow.eachCell((cell, colNumber) => {
-      const value = String(cell.value || '').trim();
-      columnMap[value] = colNumber;
-    });
-
-    // Validate that we have at least the required columns
-    const missingHeaders = EXPECTED_HEADERS.filter(
-      (h) => !(h in columnMap)
-    );
-
-    if (missingHeaders.length > 0) {
-      console.warn(
-        `Sheet "${worksheet.name}" is missing headers: ${missingHeaders.join(', ')}. Skipping.`
-      );
+  workbook.eachSheet(worksheet => {
+    const columns = new Map<string, number>();
+    worksheet.getRow(1).eachCell((cell, column) => columns.set(String(cell.value || '').trim(), column));
+    const wordTypeColumn = columns.get('Word Type') || columns.get('Work Type');
+    const missing: string[] = REQUIRED_HEADERS.filter(header => !columns.has(header));
+    if (!wordTypeColumn) missing.push('Word Type');
+    if (missing.length) {
+      console.warn(`Sheet "${worksheet.name}" is missing headers: ${missing.join(', ')}. Skipping.`);
       return;
     }
 
-    // Iterate through data rows (starting from row 2)
+    const words: FlashcardWord[] = [];
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // skip header
-
-      const getCellValue = (colName: string): string => {
-        const colIndex = columnMap[colName];
-        if (!colIndex) return '';
-        const cell = row.getCell(colIndex);
-        return String(cell.value || '').trim();
-      };
-
-      const english = getCellValue('English');
-      if (!english) return; // skip empty rows
-
+      if (rowNumber === 1) return;
+      const read = (column?: number) => column ? String(row.getCell(column).value || '').trim() : '';
+      const english = read(columns.get('English'));
+      if (!english) return;
       words.push({
         english,
-        wordType: getCellValue('Work Type'),
-        translation: getCellValue('Translation'),
-        exampleEnglish: getCellValue('Example English'),
-        exampleVietnamese: getCellValue('Example Vietnamese'),
+        wordType: read(wordTypeColumn),
+        phonetic: read(columns.get('Phonetic')) || undefined,
+        translation: read(columns.get('Translation')),
+        exampleEnglish: read(columns.get('Example English')),
+        exampleVietnamese: read(columns.get('Example Vietnamese')),
       });
     });
-
-    if (words.length > 0) {
-      sheets.push({
-        name: worksheet.name,
-        words,
-      });
-    }
+    if (words.length) sheets.push({ name: worksheet.name, words });
   });
 
   return sheets;

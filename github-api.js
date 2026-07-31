@@ -55,7 +55,9 @@ async function githubFetch(endpoint, options = {}, _retries = 3) {
     } catch {
       errorMsg = await res.text();
     }
-    throw new Error(`GitHub API ${res.status}: ${errorMsg}`);
+    const error = new Error(`GitHub API ${res.status}: ${errorMsg}`);
+    error.status = res.status;
+    throw error;
   }
 
   return res.json();
@@ -112,7 +114,9 @@ async function updateRef(commitSha) {
   const { repo, branch } = getConfig();
   await githubFetch(`/repos/${repo}/git/refs/heads/${branch}`, {
     method: 'PATCH',
-    body: JSON.stringify({ sha: commitSha, force: true }),
+    // Không force-push: nếu branch đổi trong lúc xử lý, GitHub trả conflict
+    // để caller đọc HEAD mới và tạo lại commit, tránh ghi đè nội dung người khác.
+    body: JSON.stringify({ sha: commitSha, force: false }),
   });
 }
 
@@ -189,7 +193,16 @@ export async function commitChanges({ filesToAdd = [], pathsToDelete = [], messa
   }
 
   const newCommitSha = await createCommitObj(message, newTreeSha, headSha);
-  await updateRef(newCommitSha);
+  try {
+    await updateRef(newCommitSha);
+  } catch (error) {
+    if (error.status === 409 || error.status === 422) {
+      const conflict = new Error('Nội dung JSON vừa được cập nhật ở nơi khác. Vui lòng tải lại danh sách rồi thử lại để tránh ghi đè dữ liệu.');
+      conflict.status = 409;
+      throw conflict;
+    }
+    throw error;
+  }
 
   console.log(`[GitHub] ✓ ${message} (${newCommitSha.slice(0, 7)})`);
   return newCommitSha;
@@ -208,8 +221,11 @@ export async function readFile(filePath) {
     );
     const content = Buffer.from(data.content, 'base64').toString('utf-8');
     return { content, sha: data.sha };
-  } catch {
-    return null;
+  } catch (error) {
+    // File chưa tồn tại là trạng thái hợp lệ; lỗi mạng/quyền/rate-limit phải
+    // truyền lên caller để không vô tình coi dữ liệu hiện tại là mảng rỗng.
+    if (error.status === 404) return null;
+    throw error;
   }
 }
 

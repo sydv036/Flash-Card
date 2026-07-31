@@ -1,833 +1,745 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Loader2, Music, ListMusic, Layers, ListOrdered, Repeat, Repeat1, ChevronsRight, ChevronsLeft, X, Eye, EyeOff } from 'lucide-react';
-import { getLocalAudioFiles } from '@/lib/localAudio';
-import type { AudioFile } from '@/lib/localAudio';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Eye,
+  EyeOff,
+  ImageIcon,
+  ListMusic,
+  Loader2,
+  Music,
+  Pause,
+  Play,
+  Repeat,
+  Shuffle,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import {
+  getLessonFiles,
+  getRemoteAudioFiles,
+  getSignedMediaUrl,
+  type AudioFile,
+} from "@/lib/localAudio";
+import {
+  audioEndedAction,
+  takeNextShuffledItem,
+  type PlayMode,
+} from "./audioPlaybackMode";
 
-// Tự động load tất cả các file JSON script từ thư mục script
-const scriptModules = import.meta.glob('@/utils/audio/script/*.json', { eager: true });
-// flatMap: nếu file JSON là array (nhiều lesson) thì trải phẳng, nếu là object đơn thì wrap lại
-const allScripts: any[] = Object.values(scriptModules)
-  .flatMap((mod: any) => {
-    const data = mod.default ?? mod;
-    return Array.isArray(data) ? data : [data];
-  })
-  .filter((lesson) => lesson.is_display !== false);
+type Answer = { key: string; en: string; vi: string };
+type ScriptItem = {
+  id?: number;
+  questionId?: number;
+  answers?: Answer[];
+  correctAnswer?: string;
+};
+type ScriptLesson = { is_display?: boolean; items?: ScriptItem[] };
+type Lesson = {
+  lessonId: string;
+  lessonName?: string;
+  part?: number;
+  title?: string;
+  is_display: boolean;
+  hasAudio?: boolean;
+  items?: ScriptItem[];
+};
 
-// Tự động quét tất cả các file hình ảnh trong thư mục src/assets để import tự động
-const imageModules = import.meta.glob('@/assets/**/*.{png,jpg,jpeg,gif,svg,webp}', { query: '?url', import: 'default' });
+const formatTime = (seconds: number) => {
+  if (!Number.isFinite(seconds)) return "00:00";
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+};
 
-export type PlayMode = 'SEQUENTIAL' | 'SHUFFLE' | 'LOOP';
+const audioNumber = (name?: string) => Number(name?.match(/\d+/)?.[0] || 0);
+
+async function readApi(response: Response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.success === false)
+    throw new Error(data.message || "Không thể tải dữ liệu bài nghe.");
+  return data;
+}
+
+const errorMessage = (error: unknown, fallback: string) => {
+  const message = error instanceof Error ? error.message : "";
+  return /[À-ỹ]/u.test(message) ? message : fallback;
+};
 
 export function AudioPlayer() {
-  const [allFiles, setAllFiles] = useState<AudioFile[]>([]);
-  const [activeSession, setActiveSession] = useState<string>('All');
-  const [activeLessons, setActiveLessons] = useState<any[]>([]);
-
-  const [currentIndex, setCurrentIndex] = useState<number>(-1);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playMode, setPlayMode] = useState<PlayMode>('SEQUENTIAL');
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const signedUrlCache = useRef(new Map<string, string>());
+  const refreshedKey = useRef<string | null>(null);
+  const breakTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shuffleQueue = useRef<string[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [files, setFiles] = useState<AudioFile[]>([]);
+  const [part, setPart] = useState(1);
+  const [lessonId, setLessonId] = useState<string | "all">("all");
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [script, setScript] = useState<ScriptLesson | null>(null);
+  const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isImageEnlarged, setIsImageEnlarged] = useState(false);
-  const [showScriptContent, setShowScriptContent] = useLocalStorage<boolean>('fc-audio-show-script', false);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [rate, setRate] = useState(
+    () => Number(localStorage.getItem("fc-audio-rate")) || 1,
+  );
+  const [mode, setMode] = useState<PlayMode>("SEQUENTIAL");
+  const [showScript, setShowScript] = useState(
+    () => localStorage.getItem("fc-audio-show-script") === "true",
+  );
+  const [breakTime, setBreakTime] = useState(() =>
+    Math.max(0, Number(localStorage.getItem("fc-audio-break")) || 0),
+  );
+  const [enlarged, setEnlarged] = useState(false);
 
-  // Advanced Controls
-  const [playbackRate, setPlaybackRate] = useState<number>(1);
-  const [duration, setDuration] = useState<number>(0);
+  const clearBreakTimer = useCallback(() => {
+    if (breakTimer.current) clearTimeout(breakTimer.current);
+    breakTimer.current = null;
+  }, []);
 
-  const timeDisplayRef = useRef<HTMLSpanElement>(null);
-  const seekBarRef = useRef<HTMLInputElement>(null);
-
-  const [audioBreakTime, setAudioBreakTime] = useLocalStorage<number>('fc-audio-break', 0);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => clearBreakTimer(), [clearBreakTimer]);
+  useEffect(() => localStorage.setItem("fc-audio-rate", String(rate)), [rate]);
+  useEffect(
+    () => localStorage.setItem("fc-audio-break", String(breakTime)),
+    [breakTime],
+  );
+  useEffect(
+    () => localStorage.setItem("fc-audio-show-script", String(showScript)),
+    [showScript],
+  );
 
   useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  const clearPendingTimeout = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
-
-  const loadFiles = useCallback(async () => {
-    try {
+    let cancelled = false;
+    (async () => {
       setLoading(true);
-      setError(null);
-      const audioFiles = await getLocalAudioFiles();
-      setAllFiles(audioFiles);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load local audio files.');
-      toast.error('Failed to load audio files');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Fetch active lessons from backend dynamically to handle additions/deletions immediately
-  useEffect(() => {
-    const fetchActiveLessons = async () => {
       try {
-        const res = await fetch('/api/lessons');
-        const data = await res.json();
-        if (data.success) {
-          setActiveLessons(data.lessons);
-        }
-      } catch (err) {
-        console.error('Failed to fetch active lessons from API:', err);
+        const data = await readApi(await fetch("/api/lessons"));
+        const nextLessons: Lesson[] = data.lessons || [];
+        if (cancelled) return;
+        setLessons(nextLessons);
+        setFiles(await getRemoteAudioFiles(nextLessons));
+      } catch (error: unknown) {
+        if (!cancelled)
+          toast.error(errorMessage(error, "Không thể tải danh sách bài nghe."));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    fetchActiveLessons();
   }, []);
 
-  useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+  const partLessons = useMemo(
+    () =>
+      lessons
+        .filter(
+          (item) =>
+            Number(item.part || 1) === part &&
+            item.hasAudio &&
+            item.is_display !== false,
+        )
+        .sort((a, b) =>
+          a.lessonId.localeCompare(b.lessonId, "vi", {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        ),
+    [lessons, part],
+  );
+  const visibleFiles = useMemo(
+    () =>
+      files.filter(
+        (file) =>
+          file.part === part &&
+          (lessonId === "all" || file.lessonId === lessonId),
+      ),
+    [files, part, lessonId],
+  );
+  const currentIndex = visibleFiles.findIndex(
+    (file) => file.key === currentKey,
+  );
+  const currentFile = currentIndex >= 0 ? visibleFiles[currentIndex] : null;
+  const currentItem = useMemo(
+    () =>
+      script?.items?.find(
+        (item) =>
+          Number(item.id ?? item.questionId) === audioNumber(currentFile?.name),
+      ),
+    [script, currentFile],
+  );
 
-  const sessions = useMemo(() => {
-    const sessionSet = new Set<string>();
-    allFiles.forEach(f => {
-      const match = f.session.match(/\d+/);
-      const id = match ? parseInt(match[0], 10) : null;
-      if (id !== null) {
-        // Chỉ hiển thị buổi học có trong danh sách lessons từ backend, hasAudio: true và is_display: true
-        const activeLesson = activeLessons.find(l => l.lessonId === id);
-        if (activeLesson && activeLesson.hasAudio && activeLesson.is_display !== false) {
-          sessionSet.add(f.session);
-        }
-      }
-    });
-    return Array.from(sessionSet).sort((a, b) =>
-      a.toLowerCase().localeCompare(b.toLowerCase(), 'vi', { numeric: true })
-    );
-  }, [allFiles, activeLessons]);
-
-  const filteredFiles = useMemo(() => {
-    // Chỉ giữ lại những file thuộc các buổi học hợp lệ
-    const validFiles = allFiles.filter(f => {
-      const match = f.session.match(/\d+/);
-      const id = match ? parseInt(match[0], 10) : null;
-      if (id !== null) {
-        const activeLesson = activeLessons.find(l => l.lessonId === id);
-        return activeLesson && activeLesson.hasAudio && activeLesson.is_display !== false;
-      }
-      return false;
-    });
-
-    if (activeSession === 'All') return validFiles;
-    return validFiles.filter(f => f.session === activeSession);
-  }, [allFiles, activeSession, activeLessons]);
-
-  const handleSessionChange = (val: string) => {
-    clearPendingTimeout();
-    setActiveSession(val);
-    if (isPlaying && audioRef.current) {
-      audioRef.current.pause();
-    }
-    setIsPlaying(false);
-    setCurrentIndex(-1);
-    if (timeDisplayRef.current) timeDisplayRef.current.textContent = '00:00';
-    if (seekBarRef.current) seekBarRef.current.value = '0';
-    setDuration(0);
+  const selectContext = (nextPart: number, nextLesson: string | "all") => {
+    clearBreakTimer();
+    shuffleQueue.current = [];
+    audioRef.current?.pause();
+    setPlaying(false);
+    setPart(nextPart);
+    setLessonId(nextLesson);
+    setCurrentKey(null);
+    setSourceUrl("");
+    setScript(null);
+    setImageUrl("");
   };
-
-  const startPlaybackMode = (sessionVal: string, mode: PlayMode) => {
-    clearPendingTimeout();
-    if (isPlaying && audioRef.current) audioRef.current.pause();
-    setIsPlaying(false);
-
-    setActiveSession(sessionVal);
-    setPlayMode(mode);
-
-    const targetList = sessionVal === 'All' ? allFiles : allFiles.filter(f => f.session === sessionVal);
-
-    if (targetList.length > 0) {
-      const initialIdx = mode === 'SHUFFLE' ? Math.floor(Math.random() * targetList.length) : 0;
-      setCurrentIndex(initialIdx);
-    } else {
-      setCurrentIndex(-1);
-      toast.error('No audio files matched this selection');
-    }
-  };
-
-  const currentFile = currentIndex >= 0 ? filteredFiles[currentIndex] : null;
-
-  const currentSessionNumber = useMemo(() => {
-    if (!currentFile || !currentFile.session) return null;
-    const match = currentFile.session.match(/\d+/);
-    return match ? parseInt(match[0], 10) : null;
-  }, [currentFile]);
-
-  const currentAudioId = useMemo(() => {
-    if (!currentFile || !currentFile.name) return null;
-    const match = currentFile.name.match(/\d+/);
-    return match ? parseInt(match[0], 10) : null;
-  }, [currentFile]);
-
-  const currentSessionScript = useMemo(() => {
-    if (currentSessionNumber === null) return null;
-    return allScripts.find(s => s.lessonId === currentSessionNumber) || null;
-  }, [currentSessionNumber]);
-
-  const currentScriptItem = useMemo(() => {
-    if (!currentSessionScript || currentAudioId === null) return null;
-    if (!currentSessionScript.items) return null;
-    return currentSessionScript.items.find((item: any) => item.id === currentAudioId) || null;
-  }, [currentSessionScript, currentAudioId]);
-
-  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (currentSessionNumber === null || currentAudioId === null) {
-      setCurrentImageUrl(null);
-      return;
-    }
-    const targetFolder = `B${currentSessionNumber}`;
-    const targetNamePrefix = `${currentAudioId}.`;
-
-    const possiblePaths = Object.keys(imageModules);
-    const matchedPath = possiblePaths.find(path => {
-      const parts = path.split('/');
-      const folder = parts[parts.length - 2];
-      const filename = parts[parts.length - 1];
-      return folder === targetFolder && filename.toLowerCase().startsWith(targetNamePrefix.toLowerCase());
-    });
-
-    if (matchedPath) {
-      (imageModules[matchedPath] as () => Promise<string>)().then(url => {
-        setCurrentImageUrl(url);
-      }).catch(() => {
-        setCurrentImageUrl(null);
-      });
-    } else {
-      setCurrentImageUrl(null);
-    }
-  }, [currentSessionNumber, currentAudioId]);
-
-  const skipToNextSession = () => {
-    clearPendingTimeout();
-    if (activeSession !== 'All' || filteredFiles.length === 0 || !currentFile) return;
-    const currentSessIndex = sessions.indexOf(currentFile.session);
-    const nextSessionName = currentSessIndex >= 0 && currentSessIndex < sessions.length - 1 ? sessions[currentSessIndex + 1] : sessions[0];
-    const targetIdx = filteredFiles.findIndex(f => f.session === nextSessionName);
-    setCurrentIndex(targetIdx !== -1 ? targetIdx : 0);
-  };
-
-  const skipToPrevSession = () => {
-    clearPendingTimeout();
-    if (activeSession !== 'All' || filteredFiles.length === 0 || !currentFile) return;
-    const currentSessIndex = sessions.indexOf(currentFile.session);
-    const prevSessionName = currentSessIndex > 0 ? sessions[currentSessIndex - 1] : sessions[sessions.length - 1];
-    const targetIdx = filteredFiles.findIndex(f => f.session === prevSessionName);
-    setCurrentIndex(targetIdx !== -1 ? targetIdx : 0);
-  };
-
-  const playNext = useCallback((isAuto = false) => {
-    clearPendingTimeout();
-    if (filteredFiles.length === 0) return;
-
-    if (isAuto && playMode === 'LOOP') {
-      const triggerLoop = () => {
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play().catch(e => console.error(e));
-        }
-      };
-      if (audioBreakTime > 0) {
-        timeoutRef.current = setTimeout(triggerLoop, audioBreakTime * 1000);
-      } else {
-        triggerLoop();
+    if (!currentFile) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await readApi(
+          await fetch(
+            `/api/lessons/${encodeURIComponent(currentFile.lessonId)}/script?part=${currentFile.part}`,
+          ),
+        );
+        if (!cancelled) setScript(data.lesson || data.script || data);
+      } catch {
+        if (!cancelled) setScript(null);
       }
-      return;
-    }
-
-    let nextIndex;
-    if (playMode === 'SHUFFLE') {
-      nextIndex = Math.floor(Math.random() * filteredFiles.length);
-      if (nextIndex === currentIndex && filteredFiles.length > 1) {
-        nextIndex = (nextIndex + 1) % filteredFiles.length;
-      }
-    } else {
-      nextIndex = (currentIndex + 1) % filteredFiles.length;
-    }
-
-    if (isAuto && audioBreakTime > 0) {
-      timeoutRef.current = setTimeout(() => {
-        setCurrentIndex(nextIndex);
-      }, audioBreakTime * 1000);
-    } else {
-      setCurrentIndex(nextIndex);
-    }
-  }, [filteredFiles.length, currentIndex, playMode, audioBreakTime, clearPendingTimeout]);
-
-  const playPrevious = () => {
-    clearPendingTimeout();
-    if (filteredFiles.length === 0) return;
-    const prevIndex = currentIndex <= 0 ? filteredFiles.length - 1 : currentIndex - 1;
-    setCurrentIndex(prevIndex);
-  };
-
-  const togglePlaySync = () => {
-    clearPendingTimeout();
-    if (currentIndex === -1 && filteredFiles.length > 0) {
-      setCurrentIndex(0);
-      return;
-    }
-
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play().catch(e => {
-          console.error("Playback failed:", e);
-          toast.error("Could not play audio");
-        });
-      }
-    }
-  };
-
-  const cyclePlayMode = () => {
-    if (playMode === 'SEQUENTIAL') setPlayMode('SHUFFLE');
-    else if (playMode === 'SHUFFLE') setPlayMode('LOOP');
-    else setPlayMode('SEQUENTIAL');
-  };
-
-  // Sync playbackRate
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = playbackRate;
-    }
-  }, [playbackRate]);
-
-  // Auto play when currentIndex changes
-  useEffect(() => {
-    if (currentIndex >= 0 && audioRef.current && filteredFiles[currentIndex]) {
-      audioRef.current.src = filteredFiles[currentIndex].url;
-      audioRef.current.play()
-        .then(() => setIsPlaying(true))
-        .catch(err => {
-          console.error("Auto-play blocked or failed", err);
-          setIsPlaying(false);
-          toast.error(`Không thể phát: ${filteredFiles[currentIndex].name}. Đang bỏ qua...`);
-          clearPendingTimeout();
-          timeoutRef.current = setTimeout(() => {
-            playNext(true);
-          }, 1500);
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex, filteredFiles]);
-
-  useEffect(() => {
-    const audioEl = audioRef.current;
-    if (!audioEl) return;
-
-    const handleEnded = () => playNext(true);
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleError = () => {
-      console.error("Audio playback error");
-      setIsPlaying(false);
-      clearPendingTimeout();
-      timeoutRef.current = setTimeout(() => {
-        playNext(true);
-      }, 1500);
-    };
-
-    audioEl.addEventListener('ended', handleEnded);
-    audioEl.addEventListener('play', handlePlay);
-    audioEl.addEventListener('pause', handlePause);
-    audioEl.addEventListener('error', handleError);
-
+    })();
     return () => {
-      audioEl.removeEventListener('ended', handleEnded);
-      audioEl.removeEventListener('play', handlePlay);
-      audioEl.removeEventListener('pause', handlePause);
-      audioEl.removeEventListener('error', handleError);
+      cancelled = true;
     };
-  }, [playNext, clearPendingTimeout]);
+  }, [currentFile]);
 
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return '00:00';
-    const mins = Math.floor(time / 60);
-    const secs = Math.floor(time % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  useEffect(() => {
+    if (!currentFile) return;
+    let cancelled = false;
+    setSourceLoading(true);
+    (async () => {
+      try {
+        let url = signedUrlCache.current.get(currentFile.key);
+        if (!url) {
+          url = await getSignedMediaUrl(currentFile.key);
+          signedUrlCache.current.set(currentFile.key, url);
+        }
+        if (!cancelled) {
+          setSourceUrl(url);
+          refreshedKey.current = null;
+        }
+      } catch (error: unknown) {
+        if (!cancelled)
+          toast.error(
+            `Không thể mở ${currentFile.name}: ${errorMessage(error, "Lỗi không xác định")}`,
+          );
+      } finally {
+        if (!cancelled) setSourceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFile]);
+
+  useEffect(() => {
+    if (!currentFile) {
+      setImageUrl("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const media = await getLessonFiles(
+          currentFile.part,
+          currentFile.lessonId,
+        );
+        const id = audioNumber(currentFile.name);
+        const image = media.images.find(
+          (file) => audioNumber(file.name) === id,
+        );
+        if (!cancelled)
+          setImageUrl(image ? await getSignedMediaUrl(image.key) : "");
+      } catch {
+        if (!cancelled) setImageUrl("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFile]);
+
+  useEffect(() => {
+    if (!sourceUrl || !audioRef.current) return;
+    audioRef.current.src = sourceUrl;
+    audioRef.current
+      .play()
+      .then(() => setPlaying(true))
+      .catch(() => setPlaying(false));
+  }, [sourceUrl]);
+
+  useEffect(() => {
+    shuffleQueue.current = [];
+  }, [visibleFiles]);
+
+  const move = useCallback(
+    (direction: 1 | -1, automatic = false) => {
+      clearBreakTimer();
+      if (!visibleFiles.length) return;
+      if (automatic && mode === "LOOP" && audioRef.current) {
+        const replay = () => {
+          if (!audioRef.current) return;
+          audioRef.current.currentTime = 0;
+          audioRef.current
+            .play()
+            .catch(() => toast.error("Không thể phát lại audio."));
+        };
+        if (breakTime > 0)
+          breakTimer.current = setTimeout(replay, breakTime * 1000);
+        else replay();
+        return;
+      }
+      let targetKey: string | null = null;
+      if (mode === "SHUFFLE" && direction === 1) {
+        const shuffled = takeNextShuffledItem({
+          items: visibleFiles.map((file) => file.key),
+          current: currentKey,
+          queue: shuffleQueue.current,
+        });
+        shuffleQueue.current = shuffled.queue;
+        targetKey = shuffled.item;
+      } else {
+        const index =
+          ((currentIndex < 0 ? 0 : currentIndex) +
+            direction +
+            visibleFiles.length) %
+          visibleFiles.length;
+        targetKey = visibleFiles[index].key;
+      }
+      if (!targetKey) return;
+      const select = () => setCurrentKey(targetKey);
+      if (automatic && breakTime > 0)
+        breakTimer.current = setTimeout(select, breakTime * 1000);
+      else select();
+    },
+    [visibleFiles, currentIndex, currentKey, mode, breakTime, clearBreakTimer],
+  );
+
+  const handleEnded = useCallback(() => {
+    setPlaying(false);
+    const action = audioEndedAction(mode);
+    if (action === "STOP") {
+      clearBreakTimer();
+      return;
+    }
+    move(1, true);
+  }, [mode, move, clearBreakTimer]);
+
+  const moveLesson = (direction: 1 | -1) => {
+    clearBreakTimer();
+    if (lessonId !== "all" || !currentFile || !partLessons.length) return;
+    const lessonIndex = partLessons.findIndex(
+      (lesson) => lesson.lessonId === currentFile.lessonId,
+    );
+    const nextLesson =
+      partLessons[
+        (lessonIndex + direction + partLessons.length) % partLessons.length
+      ];
+    const target = visibleFiles.find(
+      (file) => file.lessonId === nextLesson.lessonId,
+    );
+    if (target) setCurrentKey(target.key);
   };
 
-  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLAudioElement>) => {
-    const time = e.currentTarget.currentTime;
-    if (timeDisplayRef.current) {
-      timeDisplayRef.current.textContent = formatTime(time);
+  const togglePlay = () => {
+    clearBreakTimer();
+    if (!currentFile && visibleFiles[0]) {
+      if (mode === "SHUFFLE") {
+        const shuffled = takeNextShuffledItem({
+          items: visibleFiles.map((file) => file.key),
+          current: null,
+          queue: [],
+        });
+        shuffleQueue.current = shuffled.queue;
+        if (shuffled.item) setCurrentKey(shuffled.item);
+      } else {
+        setCurrentKey(visibleFiles[0].key);
+      }
+      return;
     }
-    if (seekBarRef.current) {
-      seekBarRef.current.value = time.toString();
-    }
+    if (!audioRef.current) return;
+    if (playing) audioRef.current.pause();
+    else
+      audioRef.current
+        .play()
+        .catch(() => toast.error("Không thể phát audio. Vui lòng thử lại."));
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTime = Number(e.target.value);
-    if (audioRef.current) {
-      audioRef.current.currentTime = newTime;
+  const handleMediaError = async () => {
+    if (!currentFile || refreshedKey.current === currentFile.key) {
+      toast.error(`Không thể phát file ${currentFile?.name || ""}.`);
+      return;
     }
-    if (timeDisplayRef.current) {
-      timeDisplayRef.current.textContent = formatTime(newTime);
+    refreshedKey.current = currentFile.key;
+    signedUrlCache.current.delete(currentFile.key);
+    try {
+      const url = await getSignedMediaUrl(currentFile.key);
+      signedUrlCache.current.set(currentFile.key, url);
+      setSourceUrl(url);
+    } catch {
+      toast.error(
+        `Liên kết ${currentFile.name} đã hết hạn và không thể làm mới.`,
+      );
     }
   };
-
-  const renderModeIcon = () => {
-    if (playMode === 'SEQUENTIAL') return <Repeat className="w-5 h-5 text-indigo-500" />;
-    if (playMode === 'SHUFFLE') return <Shuffle className="w-5 h-5 text-indigo-500" />;
-    return <Repeat1 className="w-5 h-5 text-indigo-700 dark:text-indigo-300" />;
-  }
 
   return (
-    <div className="w-full flex flex-col gap-6">
-
-      {/* Top Toolbar */}
-      <Card className="border-border/40 shadow-sm overflow-hidden bg-card/60 backdrop-blur-sm">
-        <div className="p-4 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-            <div className="flex flex-col gap-1 w-full sm:w-auto">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Chọn buổi học</label>
-              <Select value={activeSession} onValueChange={handleSessionChange}>
-                <SelectTrigger className="w-full sm:w-[220px]">
-                  <SelectValue placeholder="Chọn buổi học" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">Tất cả buổi học</SelectItem>
-                  {sessions.map(session => (
-                    <SelectItem key={session} value={session}>{session}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-1 w-full sm:w-auto">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Nghỉ (giây)</label>
-              <Input
-                type="number"
-                min={0}
-                className="w-full sm:w-[90px]"
-                value={audioBreakTime}
-                onChange={(e) => setAudioBreakTime(Math.max(0, Number(e.target.value)))}
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 w-full sm:w-auto">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tốc độ</label>
-              <Select value={playbackRate.toString()} onValueChange={(val) => setPlaybackRate(Number(val))}>
-                <SelectTrigger className="w-full sm:w-[90px]">
-                  <SelectValue placeholder="Tốc độ" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0.5">0.5x</SelectItem>
-                  <SelectItem value="0.75">0.75x</SelectItem>
-                  <SelectItem value="1">1.0x</SelectItem>
-                  <SelectItem value="1.25">1.25x</SelectItem>
-                  <SelectItem value="1.5">1.5x</SelectItem>
-                  <SelectItem value="2">2.0x</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 hover:bg-muted"
-              onClick={() => startPlaybackMode(activeSession, 'SEQUENTIAL')}
-              disabled={filteredFiles.length === 0}
-            >
-              <ListOrdered className="w-4 h-4 text-muted-foreground" />
-              <span className="hidden sm:inline">Phát lần lượt</span>
-              <span className="sm:hidden">Lần lượt</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 border-indigo-200 hover:bg-indigo-50 dark:border-indigo-900/40 dark:hover:bg-indigo-900/50"
-              onClick={() => startPlaybackMode(activeSession, 'SHUFFLE')}
-              disabled={filteredFiles.length === 0}
-            >
-              <Shuffle className="w-4 h-4 text-indigo-500" />
-              <span className="hidden sm:inline">{activeSession === 'All' ? 'Trộn tất cả' : 'Trộn buổi này'}</span>
-              <span className="sm:hidden">Trộn</span>
-            </Button>
-
-            {activeSession !== 'All' && (
-              <Button
-                variant="default"
-                size="sm"
-                className="flex items-center gap-2"
-                onClick={() => startPlaybackMode('All', 'SHUFFLE')}
-                disabled={allFiles.length === 0}
-              >
-                <Layers className="w-4 h-4" />
-                <span>Trộn hệ thống</span>
-              </Button>
-            )}
+    <div className="w-full space-y-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-6">
+      <div className="rounded-[28px] border border-white/50 bg-white/70 p-4 shadow-xl shadow-indigo-500/10 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/65 sm:p-6">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg">
+            <Music className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="font-bold">Luyện nghe TOEIC</h2>
+            <p className="text-xs text-muted-foreground">
+              Audio được phát trực tiếp từ Server
+            </p>
           </div>
         </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <label className="text-xs font-semibold text-muted-foreground">
+            Phần thi
+            <select
+              className="mt-1 h-11 w-full rounded-xl border bg-background px-3 text-sm text-foreground"
+              value={part}
+              onChange={(e) => selectContext(Number(e.target.value), "all")}
+            >
+              {[1, 2, 3, 4].map((value) => (
+                <option key={value} value={value}>
+                  TOEIC Part {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-muted-foreground">
+            Buổi học
+            <select
+              className="mt-1 h-11 w-full rounded-xl border bg-background px-3 text-sm text-foreground"
+              value={lessonId}
+              onChange={(e) => selectContext(part, e.target.value)}
+            >
+              <option value="all">Tất cả buổi</option>
+              {partLessons.map((lesson) => (
+                <option key={lesson.lessonId} value={lesson.lessonId}>
+                  {lesson.lessonName || lesson.title || lesson.lessonId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-muted-foreground">
+            Nghỉ giữa audio (giây)
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={breakTime}
+              onChange={(e) =>
+                setBreakTime(Math.max(0, Number(e.target.value) || 0))
+              }
+              className="mt-1 h-11 w-full rounded-xl border bg-background px-3 text-sm text-foreground"
+            />
+          </label>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden rounded-[28px] border-white/50 bg-card/75 shadow-xl backdrop-blur-2xl dark:border-white/10">
+        <CardContent className="p-4 sm:p-6">
+          {imageUrl ? (
+            <button
+              className="mb-5 block w-full overflow-hidden rounded-2xl bg-muted"
+              onClick={() => setEnlarged(true)}
+            >
+              <img
+                src={imageUrl}
+                className="max-h-72 w-full object-contain"
+                alt="Ảnh câu hỏi"
+              />
+            </button>
+          ) : (
+            <div className="mb-5 flex h-36 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-sky-50 dark:from-indigo-950 dark:to-slate-900">
+              <ImageIcon className="h-12 w-12 text-indigo-300" />
+            </div>
+          )}
+          <div className="min-w-0 text-center">
+            <p className="truncate font-semibold">
+              {currentFile?.name || "Chọn một bài nghe"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {currentFile?.session || `${visibleFiles.length} audio`}
+            </p>
+          </div>
+          <input
+            aria-label="Tiến trình phát"
+            type="range"
+            min={0}
+            max={duration || 0}
+            value={currentTime}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              if (audioRef.current) audioRef.current.currentTime = value;
+              setCurrentTime(value);
+            }}
+            className="mt-5 h-11 w-full accent-indigo-600"
+          />
+          <div className="-mt-2 flex justify-between text-[11px] text-muted-foreground">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+            <Button
+              title={mode === "SHUFFLE" ? "Tắt phát trộn" : "Bật phát trộn"}
+              aria-label="Phát trộn audio"
+              aria-pressed={mode === "SHUFFLE"}
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-11 w-11 rounded-full",
+                mode === "SHUFFLE" && "bg-indigo-100 dark:bg-indigo-950",
+              )}
+              onClick={() => {
+                clearBreakTimer();
+                shuffleQueue.current = [];
+                setMode(mode === "SHUFFLE" ? "SEQUENTIAL" : "SHUFFLE");
+              }}
+            >
+              <Shuffle
+                className={cn(
+                  "h-5 w-5",
+                  mode === "SHUFFLE" && "text-indigo-600",
+                )}
+              />
+            </Button>
+            {lessonId === "all" && (
+              <Button
+                title="Buổi trước"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-full"
+                onClick={() => moveLesson(-1)}
+              >
+                <ChevronsLeft className="h-5 w-5" />
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-12 w-12 rounded-full"
+              onClick={() => move(-1)}
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </Button>
+            <Button
+              size="icon"
+              className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg"
+              onClick={togglePlay}
+              disabled={loading || sourceLoading}
+            >
+              {sourceLoading ? (
+                <Loader2 className="h-7 w-7 animate-spin" />
+              ) : playing ? (
+                <Pause className="h-7 w-7" />
+              ) : (
+                <Play className="ml-1 h-7 w-7" />
+              )}
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-12 w-12 rounded-full"
+              onClick={() => move(1)}
+            >
+              <ChevronRight className="h-6 w-6" />
+            </Button>
+            {lessonId === "all" && (
+              <Button
+                title="Buổi tiếp theo"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-full"
+                onClick={() => moveLesson(1)}
+              >
+                <ChevronsRight className="h-5 w-5" />
+              </Button>
+            )}
+            <Button
+              title={mode === "LOOP" ? "Tắt lặp audio" : "Lặp audio hiện tại"}
+              aria-label="Lặp audio hiện tại"
+              aria-pressed={mode === "LOOP"}
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-11 w-11 rounded-full",
+                mode === "LOOP" && "bg-indigo-100 dark:bg-indigo-950",
+              )}
+              onClick={() => {
+                clearBreakTimer();
+                shuffleQueue.current = [];
+                setMode(mode === "LOOP" ? "SEQUENTIAL" : "LOOP");
+              }}
+            >
+              <Repeat
+                className={cn("h-5 w-5", mode === "LOOP" && "text-indigo-600")}
+              />
+            </Button>
+          </div>
+          <p
+            className="mt-2 text-center text-xs text-muted-foreground"
+            aria-live="polite"
+          >
+            {mode === "SHUFFLE"
+              ? "Phát trộn đang bật · mỗi audio phát một lần trước khi trộn vòng mới"
+              : mode === "LOOP"
+                ? "Đang lặp lại audio hiện tại"
+                : "Phát một audio rồi dừng"}
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => (
+              <button
+                key={value}
+                className={cn(
+                  "h-11 min-w-11 rounded-xl px-2 text-xs font-semibold",
+                  rate === value ? "bg-indigo-600 text-white" : "bg-muted",
+                )}
+                onClick={() => {
+                  setRate(value);
+                  if (audioRef.current) audioRef.current.playbackRate = value;
+                }}
+              >
+                {value}×
+              </button>
+            ))}
+          </div>
+          <audio
+            ref={audioRef}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onLoadedMetadata={(e) => {
+              setDuration(e.currentTarget.duration);
+              e.currentTarget.playbackRate = rate;
+            }}
+            onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+            onEnded={handleEnded}
+            onError={handleMediaError}
+          />
+        </CardContent>
       </Card>
 
-      {/* Player Controls */}
-      <Card className="border-2 border-indigo-100 dark:border-indigo-900/40 shadow-xl overflow-hidden bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm relative">
-        <CardContent className="p-6 md:p-8">
-          <div className="flex flex-col items-center gap-6">
-            {/* {currentScriptItem && currentImageUrl ? ( */}
-            {currentImageUrl ? (
-              <div className="w-full max-w-[320px] aspect-[4/3] rounded-xl bg-white/60 dark:bg-gray-800/60 overflow-hidden border border-indigo-100 dark:border-indigo-900/40 p-2 shadow-sm relative group flex items-center justify-center">
-                <img
-                  src={currentImageUrl}
-                  alt={`Hình ảnh câu ${currentAudioId}`}
-                  className="w-full h-full object-contain transition-all hover:scale-[1.02] cursor-zoom-in"
-                  onClick={() => setIsImageEnlarged(true)}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-                <div className="absolute inset-0 pointer-events-none rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="bg-black/50 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 backdrop-blur-md">
-                    Phóng to
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                {isPlaying ? (
-                  <div className="flex gap-1.5 items-end h-8">
-                    <div className="w-1.5 bg-white rounded-full animate-[bounce_1s_ease-in-out_infinite]" />
-                    <div className="w-1.5 bg-white rounded-full animate-[bounce_1.2s_ease-in-out_infinite_0.1s]" />
-                    <div className="w-1.5 bg-white rounded-full animate-[bounce_0.9s_ease-in-out_infinite_0.2s]" />
-                    <div className="w-1.5 bg-white rounded-full animate-[bounce_1.1s_ease-in-out_infinite_0.3s]" />
-                  </div>
+      {currentItem && script?.is_display !== false && (
+        <Card className="rounded-[24px] bg-card/80 backdrop-blur-xl">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Nội dung bài nghe</h3>
+              <Button
+                variant="ghost"
+                className="h-11 rounded-xl"
+                onClick={() => setShowScript(!showScript)}
+              >
+                {showScript ? (
+                  <EyeOff className="mr-2 h-4 w-4" />
                 ) : (
-                  <Music className="w-10 h-10 text-white" />
+                  <Eye className="mr-2 h-4 w-4" />
                 )}
+                {showScript ? "Ẩn" : "Hiện"}
+              </Button>
+            </div>
+            {showScript && (
+              <div className="mt-3 space-y-2">
+                {currentItem.answers?.map((answer) => (
+                  <div
+                    key={answer.key}
+                    className={cn(
+                      "rounded-2xl border p-3 text-sm",
+                      answer.key === currentItem.correctAnswer &&
+                        "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30",
+                    )}
+                  >
+                    <b>
+                      {answer.key}. {answer.en}
+                    </b>
+                    <p className="mt-1 text-muted-foreground">{answer.vi}</p>
+                  </div>
+                ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
 
-            <div className="text-center w-full">
-              <h2 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-gray-100 truncate flex-1 leading-tight mb-2">
-                {currentFile ? currentFile.name : 'Vui lòng chọn bài'}
-              </h2>
-              <div className="inline-flex items-center justify-center gap-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full">
-                <Layers className="w-3.5 h-3.5" />
-                <p className="text-xs sm:text-sm font-semibold uppercase tracking-wider">
-                  {currentFile && currentFile.session !== 'Others'
-                    ? `Buổi: ${currentFile.session}`
-                    : `${filteredFiles.length} file(s) / ${sessions.length} Buổi học`}
-                </p>
-              </div>
-            </div>
-
-            {/* Seek Bar */}
-            <div className="w-full max-w-sm mt-2">
-              <div className="flex justify-between text-xs text-muted-foreground mb-2 font-medium">
-                <span ref={timeDisplayRef}>00:00</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-              <input
-                ref={seekBarRef}
-                type="range"
-                min={0}
-                max={duration || 100}
-                step={0.1}
-                defaultValue={0}
-                onChange={handleSeek}
-                className="w-full h-1.5 bg-indigo-100 dark:bg-indigo-900 rounded-lg appearance-none cursor-pointer accent-indigo-600 outline-none transition-all hover:h-2"
-              />
-            </div>
-
-            <audio
-              ref={audioRef}
-              className="hidden"
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={(e) => {
-                const audio = e.currentTarget;
-                setDuration(audio.duration);
-                audio.playbackRate = playbackRate;
-              }}
-            />
-
-            <div className="flex items-center gap-2 sm:gap-4 mt-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className={cn(
-                  "rounded-full w-10 h-10 sm:w-12 sm:h-12 transition-all",
-                  playMode !== 'SEQUENTIAL' && "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700"
-                )}
-                onClick={cyclePlayMode}
-                title={`Chế độ: ${playMode}`}
-              >
-                {renderModeIcon()}
-              </Button>
-
-              <div className="flex gap-1 sm:gap-2 border border-border/60 rounded-full px-2 py-1 items-center bg-muted/10">
-                {activeSession === 'All' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full w-8 h-8 hover:bg-indigo-100 hover:text-indigo-600 dark:hover:bg-indigo-900"
-                    onClick={skipToPrevSession}
-                    title="Chuyển về buổi học trước"
-                    disabled={filteredFiles.length === 0}
-                  >
-                    <ChevronsLeft className="w-5 h-5" />
-                  </Button>
-                )}
-
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="rounded-full w-10 h-10 sm:w-12 sm:h-12 border-0 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={playPrevious}
-                  disabled={filteredFiles.length === 0}
-                >
-                  <SkipBack className="w-6 h-6" />
-                </Button>
-              </div>
-
-              <Button
-                size="icon"
-                className="rounded-full w-16 h-16 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-xl shadow-indigo-500/20 text-white border-0 hover:scale-105 transition-transform"
-                onClick={togglePlaySync}
-                disabled={filteredFiles.length === 0}
-              >
-                {loading ? (
-                  <Loader2 className="w-8 h-8 animate-spin" />
-                ) : isPlaying ? (
-                  <Pause className="w-8 h-8 fill-current" />
-                ) : (
-                  <Play className="w-8 h-8 fill-current ml-1" />
-                )}
-              </Button>
-
-              <div className="flex gap-1 sm:gap-2 border border-border/60 rounded-full px-2 py-1 items-center bg-muted/10">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="rounded-full w-10 h-10 sm:w-12 sm:h-12 border-0 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => playNext()}
-                  disabled={filteredFiles.length === 0}
-                >
-                  <SkipForward className="w-6 h-6" />
-                </Button>
-
-                {activeSession === 'All' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full w-8 h-8 hover:bg-indigo-100 hover:text-indigo-600 dark:hover:bg-indigo-900"
-                    onClick={skipToNextSession}
-                    title="Chuyển sang buổi học kế tiếp"
-                    disabled={filteredFiles.length === 0}
-                  >
-                    <ChevronsRight className="w-5 h-5" />
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Hiển thị script nếu có file script match và có cờ is_display === true */}
-            {currentScriptItem && currentSessionNumber !== null && currentSessionScript?.is_display === true && (
-              <div className="w-full mt-6 border-t border-border/50 pt-6 z-10 bg-white/40 dark:bg-black/20 p-4 md:p-6 rounded-xl backdrop-blur-sm">
-
-                {/* Nội dung Script */}
-                <div className="w-full flex flex-col gap-3 text-left">
-                  <h3 className="font-semibold text-lg text-indigo-700 dark:text-indigo-400 mb-2 flex items-center justify-between">
-                    <span>Nội dung bài nghe</span>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 rounded-full px-4 border-indigo-200 hover:bg-indigo-50 dark:border-indigo-800 dark:hover:bg-indigo-900/50"
-                      onClick={() => setShowScriptContent(!showScriptContent)}
-                    >
-                      {showScriptContent ? (
-                        <>
-                          <EyeOff className="w-4 h-4 text-indigo-500" />
-                          <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Ẩn nội dung</span>
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="w-4 h-4 text-indigo-500" />
-                          <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Hiện nội dung</span>
-                        </>
-                      )}
-                    </Button>
-                  </h3>
-
-                  {showScriptContent ? (
-                    <div className="flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
-                      {currentScriptItem.answers?.map((ans: any, idx: number) => {
-                        const isCorrect = ans.key === currentScriptItem.correctAnswer;
-                        return (
-                          <div
-                            key={idx}
-                            className={cn(
-                              "p-3.5 rounded-lg border transition-all duration-200",
-                              isCorrect
-                                ? "bg-green-50/90 border-green-200 dark:bg-green-950/40 dark:border-green-900/60 shadow-sm scale-[1.01]"
-                                : "bg-white/50 dark:bg-gray-800/40 border-border/60 hover:bg-white dark:hover:bg-gray-800"
-                            )}
-                          >
-                            <div className="flex items-start gap-3">
-                              <span className={cn(
-                                "font-bold text-base min-w-[24px] mt-0.5",
-                                isCorrect ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
-                              )}>
-                                {ans.key}.
-                              </span>
-                              <div className="flex flex-col gap-1.5">
-                                <span className={cn(
-                                  "text-[15px] font-medium leading-snug",
-                                  isCorrect ? "text-green-700 dark:text-green-300" : "text-foreground"
-                                )}>{ans.en}</span>
-                                <span className="text-sm text-gray-500 dark:text-gray-400 italic">
-                                  {ans.vi}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div
-                      className="flex flex-col items-center justify-center py-12 px-4 bg-muted/20 border-2 border-dashed border-indigo-100 dark:border-indigo-900/40 rounded-xl cursor-pointer hover:bg-muted/40 transition-colors group"
-                      onClick={() => setShowScriptContent(true)}
-                    >
-                      <EyeOff className="w-10 h-10 text-muted-foreground/50 group-hover:text-indigo-400 mb-3 transition-colors" />
-                      <p className="text-sm text-muted-foreground font-medium group-hover:text-indigo-600 dark:group-hover:text-indigo-300">
-                        Nội dung đang ẩn
-                      </p>
-                      <p className="text-xs text-muted-foreground/70 mt-1">
-                        Nhấn vào đây hoặc nút "Hiện nội dung" để hiển thị
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
+      <Card className="rounded-[24px] bg-card/75 backdrop-blur-xl">
+        <CardContent className="p-3">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="flex items-center gap-2 font-semibold">
+              <ListMusic className="h-4 w-4 text-indigo-500" />
+              Danh sách
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {visibleFiles.length} file
+            </span>
           </div>
-
-          <div className="absolute top-4 right-4 sm:top-6 sm:right-6 pointer-events-none opacity-20">
-            <Music className="w-24 h-24" />
+          <div className="max-h-80 space-y-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex justify-center p-8">
+                <Loader2 className="animate-spin" />
+              </div>
+            ) : visibleFiles.length === 0 ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">
+                Chưa có audio cho lựa chọn này.
+              </p>
+            ) : (
+              visibleFiles.map((file) => (
+                <button
+                  key={file.key}
+                  onClick={() => {
+                    clearBreakTimer();
+                    shuffleQueue.current = [];
+                    setCurrentKey(file.key);
+                  }}
+                  className={cn(
+                    "flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm",
+                    currentKey === file.key
+                      ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200"
+                      : "hover:bg-muted",
+                  )}
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background">
+                    {currentKey === file.key && playing ? (
+                      <Pause className="h-4 w-4" />
+                    ) : (
+                      <Play className="ml-0.5 h-4 w-4" />
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <b className="block truncate">{file.name}</b>
+                    <small className="text-muted-foreground">
+                      {file.session}
+                    </small>
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Track List */}
-      <Card className="border-border/40 shadow-sm overflow-hidden bg-card/60 backdrop-blur-sm">
-        <div className="p-4 border-b border-border/50 flex flex-row items-center gap-2 bg-muted/20 justify-between">
-          <div className="flex flex-row items-center gap-2">
-            <ListMusic className="w-5 h-5 text-indigo-500" />
-            <h3 className="font-semibold text-foreground">
-              {activeSession === 'All' ? 'Tất cả danh sách' : `Danh sách: ${activeSession}`}
-            </h3>
-          </div>
-          <span className="text-xs font-medium text-muted-foreground bg-background px-2 py-1 rounded-md border border-border">
-            {filteredFiles.length} bài
-          </span>
-        </div>
-        <div className="max-h-[400px] overflow-y-auto p-2 scrollbar-thin">
-          {error ? (
-            <div className="flex flex-col items-center justify-center p-8 text-center text-red-500">
-              <p>{error}</p>
-            </div>
-          ) : loading ? (
-            <div className="flex flex-col items-center justify-center p-8 text-muted-foreground">
-              <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-500" />
-              <p>Loading local audio files...</p>
-            </div>
-          ) : filteredFiles.length === 0 ? (
-            <div className="text-center p-8 text-muted-foreground flex flex-col gap-2">
-              <p>No audio files found.</p>
-              <p className="text-sm">Add .mp3 or .wav files to <code>src/utils/audio/</code> to see them here.</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {filteredFiles.map((file, index) => (
-                <button
-                  key={file.id}
-                  onClick={() => {
-                    clearPendingTimeout();
-                    setCurrentIndex(index);
-                  }}
-                  className={cn(
-                    "flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg text-left transition-all hover:bg-muted group w-full",
-                    currentIndex === index
-                      ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50 shadow-sm"
-                      : "text-foreground"
-                  )}
-                >
-                  <div className="flex items-center gap-3 w-full">
-                    <div className="w-8 h-8 flex items-center justify-center rounded-full bg-background shrink-0 shadow-sm border border-border group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/50 transition-colors">
-                      {currentIndex === index && isPlaying ? (
-                        <Music className="w-4 h-4 text-indigo-500 animate-pulse" />
-                      ) : (
-                        <Play className="w-4 h-4 text-muted-foreground group-hover:text-indigo-500 ml-0.5" />
-                      )}
-                    </div>
-                    <div className="flex flex-col flex-1 min-w-0">
-                      <span className="truncate text-sm font-medium">
-                        {file.name}
-                      </span>
-                      {activeSession === 'All' && file.session !== 'Others' && (
-                        <span className="text-[10px] sm:text-xs text-muted-foreground truncate uppercase tracking-wider font-semibold">
-                          {file.session}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* Fullscreen Image Overlay */}
-      {isImageEnlarged && currentImageUrl && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200"
-          onClick={() => setIsImageEnlarged(false)}
+      {enlarged && imageUrl && (
+        <button
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setEnlarged(false)}
         >
-          <button
-            className="absolute top-4 right-4 sm:top-6 sm:right-6 w-12 h-12 bg-white/10 hover:bg-white/20 hover:scale-105 rounded-full flex items-center justify-center text-white transition-all shadow-lg"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsImageEnlarged(false);
-            }}
-          >
-            <X className="w-6 h-6" />
-          </button>
-
           <img
-            src={currentImageUrl}
-            alt="Đã phóng to"
-            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl ring-1 ring-white/20 animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
+            src={imageUrl}
+            alt="Ảnh phóng to"
+            className="max-h-[90vh] max-w-full rounded-2xl object-contain"
           />
-        </div>
+        </button>
       )}
     </div>
   );

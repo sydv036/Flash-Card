@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { useFlashcard } from '@/context/FlashcardContext';
+import { useFlashcard } from '@/context/flashcard-context';
+import { isEditableTarget } from '@/lib/flashcardStudy';
 
 /**
  * Keyboard shortcuts component.
@@ -10,6 +11,7 @@ export function KeyboardShortcutsHint() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'ArrowRight' && hasNext) {
         nextWord();
       } else if (e.key === 'ArrowLeft' && hasPrev) {

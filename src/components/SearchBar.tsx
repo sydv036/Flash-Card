@@ -1,7 +1,7 @@
 import { Search, Play, Pause } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useFlashcard } from '@/context/FlashcardContext';
+import { useFlashcard } from '@/context/flashcard-context';
 
 export function SearchBar() {
   const {
