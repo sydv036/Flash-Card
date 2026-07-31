@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import express from 'express';
-import { createRequestRateLimiter, requestRateLimitConfig, trustProxyHops } from './request-rate-limit.js';
+import { createRequestRateLimiter, requestRateLimitConfig, trustLocalProxy, trustProxyHops } from './request-rate-limit.js';
 
 test('dùng giá trị mặc định và bỏ qua cấu hình môi trường không hợp lệ', () => {
   const config = requestRateLimitConfig({
@@ -20,6 +20,35 @@ test('đọc số proxy hop an toàn cho Vercel và self-hosted', () => {
   assert.equal(trustProxyHops({ VERCEL: '1' }), 1);
   assert.equal(trustProxyHops({ TRUST_PROXY_HOPS: '3' }), 3);
   assert.equal(trustProxyHops({ TRUST_PROXY_HOPS: '0' }), 0);
+});
+
+test('local chỉ tin X-Forwarded-For từ proxy loopback', () => {
+  assert.equal(trustLocalProxy('127.0.0.1'), true);
+  assert.equal(trustLocalProxy('::1'), true);
+  assert.equal(trustLocalProxy('::ffff:127.0.0.1'), true);
+  assert.equal(trustLocalProxy('192.168.1.20'), false);
+  assert.equal(trustLocalProxy('203.0.113.10'), false);
+});
+
+test('Vite proxy local có X-Forwarded-For vẫn được rate limit bình thường', async () => {
+  const app = express();
+  app.set('trust proxy', trustLocalProxy);
+  app.use(createRequestRateLimiter({ windowMs: 1_000, limit: 1, message: 'Chậm lại.' }));
+  app.get('/resource', (_request, response) => response.sendStatus(200));
+  const server = await new Promise(resolve => {
+    const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+  });
+
+  try {
+    const address = server.address();
+    assert.equal(typeof address, 'object');
+    const url = `http://127.0.0.1:${address.port}/resource`;
+    const headers = { 'x-forwarded-for': '203.0.113.25' };
+    assert.equal((await fetch(url, { headers })).status, 200);
+    assert.equal((await fetch(url, { headers })).status, 429);
+  } finally {
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
 });
 
 test('trả 429, Retry-After và JSON chuẩn khi vượt giới hạn', async () => {

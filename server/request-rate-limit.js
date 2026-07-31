@@ -47,3 +47,10 @@ export const trustProxyHops = (environment = process.env) => {
   if (environment.VERCEL) return 1;
   return integerFromEnvironment(environment.TRUST_PROXY_HOPS, 0, { minimum: 1, maximum: 10 });
 };
+
+export const trustLocalProxy = address => {
+  const normalized = String(address || '').toLowerCase();
+  return normalized === '127.0.0.1'
+    || normalized === '::1'
+    || normalized === '::ffff:127.0.0.1';
+};

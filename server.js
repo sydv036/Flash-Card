@@ -7,6 +7,7 @@ import { renameLessonRecord } from "./server/lesson-registry.js";
 import {
   createRequestRateLimiter,
   requestRateLimitConfig,
+  trustLocalProxy,
   trustProxyHops,
 } from "./server/request-rate-limit.js";
 import {
@@ -44,7 +45,7 @@ const ownerWriteRateLimiter = createRequestRateLimiter(
 );
 
 const proxyHops = trustProxyHops();
-if (proxyHops > 0) app.set("trust proxy", proxyHops);
+app.set("trust proxy", proxyHops > 0 ? proxyHops : trustLocalProxy);
 
 app.use("/api", (req, res, next) => {
   if (req.method === "OPTIONS" || req.path === "/health") return next();
