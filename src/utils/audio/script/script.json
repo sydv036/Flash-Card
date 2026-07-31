@@ -7032,5 +7032,13 @@
     "title": "TOEIC Part 2 - Buổi 22",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-23",
+    "lessonName": "Buổi 23",
+    "title": "TOEIC Part 2 - Buổi 23",
+    "is_display": true,
+    "items": []
   }
 ]
