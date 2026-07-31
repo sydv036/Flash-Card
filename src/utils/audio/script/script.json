@@ -7046,7 +7046,7 @@
     "lessonId": "test",
     "lessonName": "Test",
     "title": "TOEIC Part 3 - Test",
-    "is_display": true,
+    "is_display": false,
     "items": []
   }
 ]
