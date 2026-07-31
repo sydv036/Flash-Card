@@ -1690,7 +1690,7 @@
     "lessonName": "Buổi 11",
     "part": 1,
     "title": "TOEIC Part 1 - Buổi 11",
-    "is_display": false,
+    "is_display": true,
     "items": [
       {
         "id": 1,
