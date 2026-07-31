@@ -1,5 +1,11 @@
-export const toVietnameseOwnerError = (message = "", status = 0) => {
+export const toVietnameseOwnerError = (
+  message = "",
+  status = 0,
+  code = "",
+) => {
   const text = message.toLowerCase();
+  if (code === "RATE_LIMITED")
+    return "Ứng dụng đang giới hạn số thao tác. Vui lòng chờ theo thời gian Retry-After rồi thử lại.";
   if (
     status === 507 ||
     ["quota", "storage", "billing", "capacity"].some((value) =>
@@ -8,7 +14,10 @@ export const toVietnameseOwnerError = (message = "", status = 0) => {
   ) {
     return "Kho Server không còn khả dụng hoặc đã vượt giới hạn thanh toán. Vui lòng kiểm tra dung lượng và hóa đơn Cloudflare.";
   }
-  if (status === 429 || text.includes("rate"))
+  if (
+    status === 429 ||
+    /slowdown|too ?many requests|rate.?limit/i.test(text)
+  )
     return "Cloudflare đang giới hạn số lượt tải lên. Vui lòng chờ một lát rồi thử lại.";
   if (status === 401 || status === 403 || text.includes("accessdenied"))
     return "Không có quyền truy cập Server. Vui lòng kiểm tra API token.";
@@ -24,9 +33,12 @@ export const readOwnerApi = async <T>(response: Response): Promise<T> => {
   const data = (await response.json().catch(() => ({}))) as T & {
     success?: boolean;
     message?: string;
+    code?: string;
   };
   if (!response.ok || data.success === false)
-    throw new Error(toVietnameseOwnerError(data.message, response.status));
+    throw new Error(
+      toVietnameseOwnerError(data.message, response.status, data.code),
+    );
   return data;
 };
 

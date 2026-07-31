@@ -47,6 +47,31 @@ const ownerWriteRateLimiter = createRequestRateLimiter(
 const proxyHops = trustProxyHops();
 app.set("trust proxy", proxyHops > 0 ? proxyHops : trustLocalProxy);
 
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  res.on("finish", () => {
+    const path = String(req.originalUrl || req.url || "").split("?")[0];
+    if (!path.startsWith("/api/media") && res.statusCode < 400) return;
+    const details = {
+      event: "api_request",
+      requestId,
+      method: req.method,
+      path,
+      status: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      rateLimit: res.getHeader("RateLimit") || null,
+      retryAfter: res.getHeader("Retry-After") || null,
+      vercelRegion: process.env.VERCEL_REGION || null,
+    };
+    const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+    console[level]("[API]", JSON.stringify(details));
+  });
+  next();
+});
+
 app.use("/api", (req, res, next) => {
   if (req.method === "OPTIONS" || req.path === "/health") return next();
   return apiRateLimiter(req, res, next);
@@ -54,7 +79,12 @@ app.use("/api", (req, res, next) => {
 app.use(express.json({ limit: "1mb" }));
 
 function jsonError(res, status, message, extra = {}) {
-  return res.status(status).json({ success: false, message, ...extra });
+  return res.status(status).json({
+    success: false,
+    message,
+    requestId: res.locals.requestId || undefined,
+    ...extra,
+  });
 }
 
 function parseCookies(header = "") {
@@ -116,7 +146,11 @@ app.use("/api", (req, res, next) => {
     req.path === "/auth/login"
   )
     return next();
-  return requireOwner(req, res, () => ownerWriteRateLimiter(req, res, next));
+  return requireOwner(req, res, () =>
+    req.path === "/media/upload-diagnostics"
+      ? next()
+      : ownerWriteRateLimiter(req, res, next),
+  );
 });
 
 app.post("/api/auth/login", loginRateLimiter, (req, res) => {
@@ -204,6 +238,30 @@ function scriptFile(lessons) {
 const lessonIdentity = (req, source = req.body) =>
   resolveLessonIdentity({ source, params: req.params, query: req.query });
 
+app.post("/api/media/upload-diagnostics", (req, res) => {
+  const source = req.body || {};
+  const status = Number.isInteger(Number(source.status))
+    ? Math.max(0, Math.min(Number(source.status), 599))
+    : 0;
+  const safeText = (value, maximum = 80) =>
+    String(value || "")
+      .replace(/[^a-zA-Z0-9._:-]/g, "")
+      .slice(0, maximum) || null;
+  console.warn("[R2]", JSON.stringify({
+    event: "browser_put_failed",
+    requestId: res.locals.requestId,
+    intentRequestId: safeText(source.intentRequestId),
+    status,
+    errorCode: safeText(source.errorCode),
+    cloudflareRay: safeText(source.cloudflareRay),
+    fileKind: ["audio", "image"].includes(source.fileKind)
+      ? source.fileKind
+      : null,
+    origin: req.get("origin") || null,
+  }));
+  res.json({ success: true, requestId: res.locals.requestId });
+});
+
 app.post("/api/media/upload-intents", async (req, res) => {
   try {
     const { part, lessonId, lessonName } = lessonIdentity(req);
@@ -265,6 +323,15 @@ app.post("/api/media/upload-intents", async (req, res) => {
         invalidFiles,
       });
     }
+    console.info("[R2]", JSON.stringify({
+      event: "upload_intents_created",
+      requestId: res.locals.requestId,
+      part,
+      lessonId,
+      requestedFiles: files.length,
+      validFiles: uploadIntents.length,
+      invalidFiles: invalidFiles.length,
+    }));
     res.json({
       success: true,
       message: invalidFiles.length
@@ -275,12 +342,18 @@ app.post("/api/media/upload-intents", async (req, res) => {
       intents: uploadIntents,
       invalidFiles,
       maxFileSize: MAX_MEDIA_SIZE,
+      requestId: res.locals.requestId,
       part,
       lessonId,
       lessonName,
     });
   } catch (error) {
-    console.error("[R2 Upload Intent]", error);
+    console.error("[R2]", JSON.stringify({
+      event: "upload_intent_failed",
+      requestId: res.locals.requestId,
+      errorCode: error?.name || error?.Code || "UnknownError",
+      status: error?.$metadata?.httpStatusCode || 500,
+    }));
     jsonError(res, 500, vietnameseR2Error(error));
   }
 });
@@ -337,6 +410,13 @@ app.post("/api/media/verify", async (req, res) => {
         }
         verified.push({ filename, key: file.key, ...metadata });
       } catch (error) {
+        console.error("[R2]", JSON.stringify({
+          event: "upload_verify_failed",
+          requestId: res.locals.requestId,
+          objectKey: typeof file?.key === "string" ? file.key : null,
+          errorCode: error?.name || error?.Code || "UnknownError",
+          status: error?.$metadata?.httpStatusCode || null,
+        }));
         invalidFiles.push({
           filename,
           key: file?.key,
@@ -346,6 +426,13 @@ app.post("/api/media/verify", async (req, res) => {
     }),
   );
   const success = invalidFiles.length === 0;
+  console.info("[R2]", JSON.stringify({
+    event: "upload_verify_completed",
+    requestId: res.locals.requestId,
+    requestedFiles: files.length,
+    verifiedFiles: verified.length,
+    invalidFiles: invalidFiles.length,
+  }));
   res.status(verified.length ? 200 : 400).json({
     success,
     message: success

@@ -23,6 +23,13 @@ const BATCH_SIZE = 10;
 const CONCURRENCY = 4;
 
 type UploadItem = { clientId: string; kind: "audio" | "image"; file: File };
+type PutFailureDetails = {
+  intentRequestId?: string;
+  status: number;
+  errorCode: string;
+  cloudflareRay?: string | null;
+  fileKind: UploadItem["kind"];
+};
 type UploadIntent = {
   clientId: string;
   fileName: string;
@@ -33,22 +40,31 @@ type UploadIntent = {
 type IntentResponse = LessonIdentity & {
   uploads?: UploadIntent[];
   invalidFiles?: { filename?: string; fileName?: string; message?: string }[];
+  requestId?: string;
 };
 type RegisterResponse = LessonIdentity & { success: boolean };
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const retry = async <T,>(operation: () => Promise<T>) => {
+const retry = async <T,>(operation: (attempt: number) => Promise<T>) => {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await operation();
+      return await operation(attempt + 1);
     } catch (error) {
       lastError = error;
       if (attempt < 2) await delay(500 * 2 ** attempt);
     }
   }
   throw lastError;
+};
+
+const reportPutFailure = (details: PutFailureDetails) => {
+  void fetch("/api/media/upload-diagnostics", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(details),
+  }).catch(() => undefined);
 };
 
 const pool = async <T,>(items: T[], worker: (item: T) => Promise<void>) => {
@@ -257,22 +273,43 @@ export const MediaUpload = ({
             setProgress((value) => ({ ...value, done: value.done + 1 }));
             return;
           }
+          let putFailure: PutFailureDetails | undefined;
           try {
             await retry(async () => {
-              const response = await fetch(intent.uploadUrl, {
-                method: "PUT",
-                headers: {
-                  "Content-Type": intent.contentType || item.file.type,
-                },
-                body: item.file,
-              });
-              if (!response.ok)
+              let response: Response;
+              try {
+                response = await fetch(intent.uploadUrl, {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": intent.contentType || item.file.type,
+                  },
+                  body: item.file,
+                });
+              } catch (error) {
+                putFailure = {
+                  intentRequestId: data.requestId,
+                  status: 0,
+                  errorCode:
+                    error instanceof TypeError ? "NETWORK_OR_CORS" : "FETCH_FAILED",
+                  fileKind: item.kind,
+                };
+                throw error;
+              }
+              if (!response.ok) {
+                const responseText = await response.text();
+                putFailure = {
+                  intentRequestId: data.requestId,
+                  status: response.status,
+                  errorCode:
+                    responseText.match(/<Code>([^<]+)<\/Code>/i)?.[1] ||
+                    `HTTP_${response.status}`,
+                  cloudflareRay: response.headers.get("cf-ray"),
+                  fileKind: item.kind,
+                };
                 throw new Error(
-                  toVietnameseOwnerError(
-                    await response.text(),
-                    response.status,
-                  ),
+                  toVietnameseOwnerError(responseText, response.status),
                 );
+              }
             });
             verified.push({
               key: intent.key,
@@ -281,6 +318,7 @@ export const MediaUpload = ({
               contentType: intent.contentType,
             });
           } catch (error) {
+            if (putFailure) reportPutFailure(putFailure);
             failures.push(item.file.name);
             failureReasons.add(
               toVietnameseOwnerError(ownerErrorMessage(error)),
