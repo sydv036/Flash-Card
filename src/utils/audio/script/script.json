@@ -48,6 +48,14 @@
     "items": []
   },
   {
+    "part": 1,
+    "lessonId": "buoi-8",
+    "lessonName": "Buổi 8",
+    "title": "TOEIC Part 1 - Buổi 8",
+    "is_display": true,
+    "items": []
+  },
+  {
     "lessonId": "buoi-9",
     "lessonName": "Buổi 9",
     "part": 1,
