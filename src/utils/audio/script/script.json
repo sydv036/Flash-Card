@@ -22,5 +22,13 @@
     "title": "TOEIC Part 1 - Buổi 4",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-5",
+    "lessonName": "Buổi 5",
+    "title": "TOEIC Part 1 - Buổi 5",
+    "is_display": true,
+    "items": []
   }
 ]
