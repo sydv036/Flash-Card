@@ -70,5 +70,13 @@
     "title": "TOEIC Part 1 - buoi-11",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-12",
+    "lessonName": "Buổi 12",
+    "title": "TOEIC Part 1 - Buổi 12",
+    "is_display": true,
+    "items": []
   }
 ]
