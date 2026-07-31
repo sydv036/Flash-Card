@@ -1,6 +1,6 @@
 [
   {
-    "lessonId": 9,
+    "lessonId": "9",
     "title": "Audio buổi 9",
     "is_display": true,
     "items": [
@@ -814,10 +814,12 @@
         ],
         "correctAnswer": "B"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 9"
   },
   {
-    "lessonId": 10,
+    "lessonId": "10",
     "title": "Audio buổi 10",
     "is_display": true,
     "items": [
@@ -1631,10 +1633,12 @@
         ],
         "correctAnswer": "C"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 10"
   },
   {
-    "lessonId": 11,
+    "lessonId": "11",
     "title": "Audio buổi 11",
     "is_display": true,
     "items": [
@@ -2448,10 +2452,12 @@
         ],
         "correctAnswer": "A"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 11"
   },
   {
-    "lessonId": 12,
+    "lessonId": "12",
     "title": "Audio buổi 12",
     "is_display": true,
     "items": [
@@ -3346,10 +3352,12 @@
         ],
         "correctAnswer": "A"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 12"
   },
   {
-    "lessonId": 13,
+    "lessonId": "13",
     "title": "Audio buổi 13",
     "is_display": true,
     "items": [
@@ -4271,10 +4279,12 @@
         ],
         "correctAnswer": "A"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 13"
   },
   {
-    "lessonId": 14,
+    "lessonId": "14",
     "title": "Audio buổi 14",
     "is_display": true,
     "items": [
@@ -5169,10 +5179,12 @@
         ],
         "correctAnswer": "A"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 14"
   },
   {
-    "lessonId": 15,
+    "lessonId": "15",
     "title": "Audio buổi 15",
     "is_display": true,
     "items": [
@@ -6094,10 +6106,12 @@
         ],
         "correctAnswer": "A"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 15"
   },
   {
-    "lessonId": 16,
+    "lessonId": "16",
     "title": "Audio buổi 16",
     "is_display": true,
     "items": [
@@ -6911,6 +6925,16 @@
         ],
         "correctAnswer": "A"
       }
-    ]
+    ],
+    "part": 1,
+    "lessonName": "Buổi 16"
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-1",
+    "lessonName": "Buổi 1",
+    "title": "TOEIC Part 1 - Buổi 1",
+    "is_display": true,
+    "items": []
   }
 ]
