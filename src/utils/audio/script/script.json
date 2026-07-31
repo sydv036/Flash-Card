@@ -126,5 +126,13 @@
     "title": "TOEIC Part 2 - Buổi 19",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-20",
+    "lessonName": "Buổi 20",
+    "title": "TOEIC Part 2 - Buổi 20",
+    "is_display": true,
+    "items": []
   }
 ]
