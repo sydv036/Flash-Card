@@ -110,5 +110,13 @@
     "title": "TOEIC Part 1 - Buổi 16",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 2,
+    "lessonId": "buoi-18",
+    "lessonName": "Buổi 18",
+    "title": "TOEIC Part 2 - Buổi 18",
+    "is_display": true,
+    "items": []
   }
 ]
