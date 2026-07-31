@@ -1,336 +1,291 @@
-import { createContext, useContext, useCallback, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
+import { toast } from 'sonner';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import type { FlashcardSheet, FlashcardWord } from '@/types/flashcard';
-import { toast } from 'sonner';
+import { createPlaybackSessionGuard, shuffleKeys, type PlaybackToken, type ShuffleResult } from '@/lib/flashcardStudy';
+import { fetchPronunciationUrl, isEnglishWord, selectEnglishVoice } from '@/lib/pronunciation';
+import { FlashcardContext } from './flashcard-context';
 
-/**
- * Kiểm tra xem từ có phải là từ tiếng Anh hợp lệ hay không.
- * Chấp nhận: A-Z, a-z, số, dấu cách, dấu gạch ngang, dấu nháy đơn.
- * Từ chối: ký tự có dấu, tiếng Việt, ký tự đặc biệt khác.
- */
-export function isEnglishWord(text: string): boolean {
-  return /^[A-Za-z0-9\s'\-.,!?]+$/.test(text.trim());
-}
+type StudyEntry = { key: string; word: FlashcardWord };
 
-// ─── Context Value Type ─────────────────────────────────────────────
-interface FlashcardContextValue {
-  sheets: FlashcardSheet[];
-  activeSheetIndex: number;
-  currentWordIndex: number;
-  showVietnameseFirst: boolean;
-  currentWord: FlashcardWord | null;
-  totalWords: number;
-  activeSheetName: string;
+const normalizeSheetName = (name: string) => name.trim().toLocaleLowerCase('vi');
 
-  setSheets: (sheets: FlashcardSheet[]) => void;
-  setActiveSheetIndex: (index: number) => void;
-  setCurrentWordIndex: (index: number) => void;
-  setShowVietnameseFirst: (value: boolean) => void;
-
-  nextWord: () => void;
-  prevWord: () => void;
-  shuffleWords: () => void;
-  addWord: (sheetName: string, word: FlashcardWord) => void;
-  
-  searchTerm: string;
-  setSearchTerm: (term: string) => void;
-
-  hasNext: boolean;
-  hasPrev: boolean;
-
-  isAutoReading: boolean;
-  flashcardBreakTime: number;
-  setFlashcardBreakTime: (val: number) => void;
-  toggleAutoRead: () => void;
-  stopAutoReading: () => void;
-}
-
-const FlashcardContext = createContext<FlashcardContextValue | null>(null);
-
-// ─── Provider ───────────────────────────────────────────────────────
 export function FlashcardProvider({ children }: { children: ReactNode }) {
-  const [sheets, setSheets] = useLocalStorage<FlashcardSheet[]>('fc-sheets', []);
-  const [activeSheetIndex, setActiveSheetIndex] = useLocalStorage<number>('fc-active-sheet', 0);
-  const [currentWordIndex, setCurrentWordIndex] = useLocalStorage<number>('fc-current-word', 0);
+  const [sheets, setStoredSheets] = useLocalStorage<FlashcardSheet[]>('fc-sheets', []);
+  const [activeSheetIndex, setStoredActiveSheetIndex] = useLocalStorage<number>('fc-active-sheet', 0);
+  const [currentWordIndex, setStoredCurrentWordIndex] = useLocalStorage<number>('fc-current-word', 0);
   const [showVietnameseFirst, setShowVietnameseFirst] = useLocalStorage<boolean>('fc-vn-first', false);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-
-  const activeSheet = activeSheetIndex === -1 ? null : (sheets[activeSheetIndex] ?? null);
-  const allWords = activeSheetIndex === -1 ? sheets.flatMap(s => s.words) : (activeSheet?.words ?? []);
-  
-  // Compute filtered words based on search term
-  const words = useMemo(() => {
-    if (!searchTerm.trim()) return allWords;
-    const ls = searchTerm.toLowerCase();
-    return allWords.filter(w => 
-      w.english.toLowerCase().includes(ls) ||
-      w.translation.toLowerCase().includes(ls) ||
-      (w.exampleEnglish && w.exampleEnglish.toLowerCase().includes(ls)) ||
-      (w.exampleVietnamese && w.exampleVietnamese.toLowerCase().includes(ls))
-    );
-  }, [allWords, searchTerm]);
-
-  // Reset current word to 0 when search term changes so we don't go out of bounds
-  useEffect(() => {
-    if (words.length > 0) {
-      setCurrentWordIndex(0);
-    }
-  }, [searchTerm, setCurrentWordIndex, words.length]);
-
-  const currentWord = words[currentWordIndex] ?? null;
-  const totalWords = words.length;
-  const activeSheetName = activeSheetIndex === -1 ? 'Tất cả buổi học (Tổng hợp)' : (activeSheet?.name ?? '');
-
-  const hasNext = currentWordIndex < totalWords - 1;
-  const hasPrev = currentWordIndex > 0;
-
-  const nextWord = useCallback(() => {
-    if (currentWordIndex < totalWords - 1) {
-      setCurrentWordIndex(currentWordIndex + 1);
-    }
-  }, [currentWordIndex, totalWords, setCurrentWordIndex]);
-
-  const prevWord = useCallback(() => {
-    if (currentWordIndex > 0) {
-      setCurrentWordIndex(currentWordIndex - 1);
-    }
-  }, [currentWordIndex, setCurrentWordIndex]);
-
-  const shuffleWords = useCallback(() => {
-    if (allWords.length <= 1) return;
-    
-    if (activeSheetIndex === -1) {
-      // Shuffling combined pool across all sheets is complex to persist to LocalStorage natively
-      // So instead, we just shuffle the `filteredList`? But shuffleWords is supposed to mutate 'sheets'.
-      // If we are combining all sheets, we probably shouldn't mutate and shuffle the master array permanently.
-      // So let's skip shuffling logic if All Sheets is selected, or handle it as a session-only boundary.
-      toast.warning('Không thể xáo trộn vật lý trên toàn bộ danh mục cùng lúc.');
-      return;
-    }
-
-    if (!activeSheet) return;
-    
-    const shuffled = [...activeSheet.words]; // Shuffle the raw list, not the filtered one
-    // Fisher-Yates shuffle
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    const newSheets = [...sheets];
-    newSheets[activeSheetIndex] = { ...activeSheet, words: shuffled };
-    setSheets(newSheets);
-    setCurrentWordIndex(0);
-  }, [activeSheet, allWords.length, sheets, activeSheetIndex, setSheets, setCurrentWordIndex]);
-
-  const handleSetActiveSheetIndex = useCallback((index: number) => {
-    setActiveSheetIndex(index);
-    setCurrentWordIndex(0);
-    setSearchTerm(''); // Clear search on sheet change
-  }, [setActiveSheetIndex, setCurrentWordIndex]);
-
-  const addWord = useCallback((sheetName: string, word: FlashcardWord) => {
-    setSheets((prevSheets) => {
-      const newSheets = [...prevSheets];
-      const sheetIndex = newSheets.findIndex(s => s.name === sheetName);
-      
-      if (sheetIndex >= 0) {
-        newSheets[sheetIndex] = {
-          ...newSheets[sheetIndex],
-          words: [word, ...newSheets[sheetIndex].words] // Add to beginning
-        };
-      } else {
-        newSheets.push({
-          name: sheetName,
-          words: [word]
-        });
-      }
-      return newSheets;
-    });
-  }, [setSheets]);
-
-  // --- Auto Read Logic ---
   const [flashcardBreakTime, setFlashcardBreakTime] = useLocalStorage<number>('fc-flashcard-break', 0);
+  const [searchTerm, setSearchTermState] = useState('');
+  const [sessionOrder, setSessionOrder] = useState<{ source: string; keys: string[] } | null>(null);
   const [isAutoReading, setIsAutoReading] = useState(false);
+
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const playbackGuard = useRef(createPlaybackSessionGuard());
 
-  const clearAutoReadIntervals = useCallback(() => {
+  const activeSheet = activeSheetIndex === -1 ? null : (sheets[activeSheetIndex] ?? null);
+  const baseEntries = useMemo<StudyEntry[]>(() => {
+    if (activeSheetIndex === -1) {
+      return sheets.flatMap((sheet, sheetIndex) => sheet.words.map((word, wordIndex) => ({ key: `${sheetIndex}:${wordIndex}`, word })));
+    }
+    return (activeSheet?.words || []).map((word, wordIndex) => ({ key: `${activeSheetIndex}:${wordIndex}`, word }));
+  }, [activeSheet, activeSheetIndex, sheets]);
+
+  const filteredEntries = useMemo(() => {
+    const query = searchTerm.trim().toLocaleLowerCase('vi');
+    if (!query) return baseEntries;
+    return baseEntries.filter(({ word }) =>
+      word.english.toLocaleLowerCase('vi').includes(query)
+      || word.translation.toLocaleLowerCase('vi').includes(query)
+      || word.exampleEnglish?.toLocaleLowerCase('vi').includes(query)
+      || word.exampleVietnamese?.toLocaleLowerCase('vi').includes(query));
+  }, [baseEntries, searchTerm]);
+  const baseEntriesSignature = useMemo(() => JSON.stringify(baseEntries.map(entry => [entry.key, entry.word])), [baseEntries]);
+
+  const orderedEntries = useMemo(() => {
+    if (!sessionOrder || sessionOrder.source !== baseEntriesSignature) return filteredEntries;
+    const rank = new Map(sessionOrder.keys.map((key, index) => [key, index]));
+    return [...filteredEntries].sort((left, right) => (rank.get(left.key) ?? Number.MAX_SAFE_INTEGER) - (rank.get(right.key) ?? Number.MAX_SAFE_INTEGER));
+  }, [baseEntriesSignature, filteredEntries, sessionOrder]);
+
+  const words = useMemo(() => orderedEntries.map(entry => entry.word), [orderedEntries]);
+  const currentWord = words[currentWordIndex] ?? null;
+  const totalWords = words.length;
+  const hasNext = currentWordIndex < totalWords - 1;
+  const hasPrev = currentWordIndex > 0;
+  const activeSheetName = activeSheetIndex === -1 ? 'Tất cả buổi học (Tổng hợp)' : (activeSheet?.name ?? '');
+
+  const clearPlaybackResources = useCallback((cancelSpeech = true) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
       audioRef.current = null;
     }
+    if (cancelSpeech && 'speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
 
   const stopAutoReading = useCallback(() => {
-    if (isAutoReading) {
-      setIsAutoReading(false);
-      clearAutoReadIntervals();
-    }
-  }, [isAutoReading, clearAutoReadIntervals]);
+    playbackGuard.current.stop();
+    clearPlaybackResources();
+    setIsAutoReading(false);
+  }, [clearPlaybackResources]);
 
-  const toggleAutoRead = useCallback(() => {
-    if (isAutoReading) {
-      stopAutoReading();
-    } else {
-      if (!hasNext) {
-         toast.info('Bạn đã ở thẻ cuối cùng!');
-         return;
+  const setSheets = useCallback((value: SetStateAction<FlashcardSheet[]>) => {
+    stopAutoReading();
+    setSessionOrder(null);
+    setSearchTermState('');
+    setStoredCurrentWordIndex(0);
+    setStoredSheets(value);
+  }, [setStoredCurrentWordIndex, setStoredSheets, stopAutoReading]);
+
+  const setActiveSheetIndex = useCallback((index: number) => {
+    stopAutoReading();
+    setSessionOrder(null);
+    setSearchTermState('');
+    setStoredActiveSheetIndex(index);
+    setStoredCurrentWordIndex(0);
+  }, [setStoredActiveSheetIndex, setStoredCurrentWordIndex, stopAutoReading]);
+
+  const setCurrentWordIndex = useCallback((index: number) => {
+    stopAutoReading();
+    setStoredCurrentWordIndex(Math.max(0, Math.min(index, Math.max(totalWords - 1, 0))));
+  }, [setStoredCurrentWordIndex, stopAutoReading, totalWords]);
+
+  const nextWord = useCallback(() => {
+    stopAutoReading();
+    setStoredCurrentWordIndex(previous => Math.min(previous + 1, Math.max(totalWords - 1, 0)));
+  }, [setStoredCurrentWordIndex, stopAutoReading, totalWords]);
+
+  const prevWord = useCallback(() => {
+    stopAutoReading();
+    setStoredCurrentWordIndex(previous => Math.max(previous - 1, 0));
+  }, [setStoredCurrentWordIndex, stopAutoReading]);
+
+  const setSearchTerm = useCallback((term: string) => {
+    stopAutoReading();
+    setSessionOrder(null);
+    setStoredCurrentWordIndex(0);
+    setSearchTermState(term);
+  }, [setStoredCurrentWordIndex, stopAutoReading]);
+
+  const shuffleWords = useCallback((): ShuffleResult => {
+    stopAutoReading();
+    const shuffled = shuffleKeys(filteredEntries.map(entry => entry.key));
+    if (shuffled.result === 'shuffled') {
+      setSessionOrder({ source: baseEntriesSignature, keys: shuffled.keys });
+      setStoredCurrentWordIndex(0);
+    }
+    return shuffled.result;
+  }, [baseEntriesSignature, filteredEntries, setStoredCurrentWordIndex, stopAutoReading]);
+
+  const addWord = useCallback((sheetName: string, word: FlashcardWord) => {
+    stopAutoReading();
+    setSessionOrder(null);
+    setSearchTermState('');
+    setStoredCurrentWordIndex(0);
+    setStoredSheets(previousSheets => {
+      const nextSheets = [...previousSheets];
+      const normalized = normalizeSheetName(sheetName);
+      const sheetIndex = nextSheets.findIndex(sheet => normalizeSheetName(sheet.name) === normalized);
+      if (sheetIndex >= 0) {
+        nextSheets[sheetIndex] = { ...nextSheets[sheetIndex], words: [word, ...nextSheets[sheetIndex].words] };
+      } else {
+        nextSheets.push({ name: sheetName.trim(), words: [word] });
       }
-      setIsAutoReading(true);
-    }
-  }, [isAutoReading, stopAutoReading, hasNext]);
+      return nextSheets;
+    });
+  }, [setStoredCurrentWordIndex, setStoredSheets, stopAutoReading]);
 
-  const playWordAndAdvance = useCallback(async () => {
-    if (!currentWord || !currentWord.english) {
-       timeoutRef.current = setTimeout(() => {
-         if (hasNext) nextWord();
-         else setIsAutoReading(false);
-       }, 2000 + flashcardBreakTime * 1000);
-       return;
+  const finishAutoReading = useCallback((token: PlaybackToken) => {
+    if (!playbackGuard.current.isActive(token)) return;
+    playbackGuard.current.stop();
+    clearPlaybackResources();
+    setIsAutoReading(false);
+  }, [clearPlaybackResources]);
+
+  const scheduleAdvance = useCallback((token: PlaybackToken, delayMs: number) => {
+    timeoutRef.current = setTimeout(() => {
+      if (!playbackGuard.current.isActive(token)) return;
+      if (hasNext) setStoredCurrentWordIndex(previous => Math.min(previous + 1, totalWords - 1));
+      else finishAutoReading(token);
+    }, delayMs);
+  }, [finishAutoReading, hasNext, setStoredCurrentWordIndex, totalWords]);
+
+  const playWordAndAdvance = useCallback(async (token: PlaybackToken, signal: AbortSignal) => {
+    if (!currentWord?.english) {
+      scheduleAdvance(token, 2000 + flashcardBreakTime * 1000);
+      return;
     }
 
-    const fallbackToTTS = () => {
+    const fallbackToSpeech = () => {
+      if (!playbackGuard.current.isActive(token)) return;
       if (!('speechSynthesis' in window)) {
-        timeoutRef.current = setTimeout(() => {
-          if (hasNext) nextWord();
-          else setIsAutoReading(false);
-        }, 1500 + flashcardBreakTime * 1000);
+        scheduleAdvance(token, 1500 + flashcardBreakTime * 1000);
         return;
       }
-
-      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(currentWord.english);
       utterance.lang = 'en-US';
       utterance.rate = 0.9;
       utterance.pitch = 1;
-
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = ['Google UK English Female', 'Google US English'];
-      let voice = null;
-      for (const name of preferred) {
-        const v = voices.find((v) => v.name === name);
-        if (v) { voice = v; break; }
-      }
-      if (!voice) {
-        voice = voices.find((v) => v.lang === 'en-US') || voices.find((v) => v.lang.startsWith('en')) || null;
-      }
+      const voice = selectEnglishVoice(window.speechSynthesis.getVoices());
       if (voice) utterance.voice = voice;
-
-      utterance.onend = () => {
-        timeoutRef.current = setTimeout(() => {
-          if (hasNext) nextWord();
-          else setIsAutoReading(false);
-        }, flashcardBreakTime * 1000);
-      };
-
-      utterance.onerror = () => {
-        timeoutRef.current = setTimeout(() => {
-          if (hasNext) nextWord();
-          else setIsAutoReading(false);
-        }, 1500 + flashcardBreakTime * 1000);
-      };
-
+      utterance.onend = () => scheduleAdvance(token, flashcardBreakTime * 1000);
+      utterance.onerror = () => scheduleAdvance(token, 1500 + flashcardBreakTime * 1000);
       window.speechSynthesis.speak(utterance);
     };
 
-    // Nếu từ không phải tiếng Anh thuần (chứa ký tự đặc biệt, tiếng Việt), thay vì gọi API thì dùng TTS
     if (!isEnglishWord(currentWord.english)) {
-      fallbackToTTS();
+      fallbackToSpeech();
       return;
     }
 
     try {
-      const wordId = currentWord.english.trim().toLowerCase();
-      const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(wordId)}`;
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        fallbackToTTS();
+      const audioUrl = await fetchPronunciationUrl(currentWord.english, signal);
+      if (!playbackGuard.current.isActive(token)) return;
+      if (!audioUrl) {
+        fallbackToSpeech();
         return;
       }
-      
-      const data = await response.json();
-      const phonetics = data[0]?.phonetics || [];
-      const audioObj = phonetics.find((p: any) => p.audio && p.audio.includes('-us.mp3'))
-        || phonetics.find((p: any) => p.audio);
-      const audioUrl = audioObj?.audio;
-
-      if (audioUrl) {
-         const audio = new Audio(audioUrl);
-         audioRef.current = audio;
-         audio.play().catch(() => {
-            // Trình duyệt chặn phát âm thanh tự động
-            fallbackToTTS();
-         });
-         audio.onended = () => {
-            timeoutRef.current = setTimeout(() => {
-               if (hasNext) nextWord();
-               else setIsAutoReading(false);
-            }, flashcardBreakTime * 1000);
-         };
-         audio.onerror = () => {
-            fallbackToTTS();
-         };
-      } else {
-         fallbackToTTS();
-      }
-
-    } catch (e) {
-      fallbackToTTS();
+      const audio = new Audio(audioUrl);
+      let fallbackStarted = false;
+      const fallbackOnce = () => {
+        if (fallbackStarted || !playbackGuard.current.isActive(token)) return;
+        fallbackStarted = true;
+        audio.onended = null;
+        audio.onerror = null;
+        fallbackToSpeech();
+      };
+      audioRef.current = audio;
+      audio.onended = () => scheduleAdvance(token, flashcardBreakTime * 1000);
+      audio.onerror = fallbackOnce;
+      await audio.play().catch(fallbackOnce);
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      fallbackToSpeech();
     }
-  }, [currentWord, flashcardBreakTime, hasNext, nextWord]);
+  }, [currentWord, flashcardBreakTime, scheduleAdvance]);
 
-  useEffect(() => {
+  const toggleAutoRead = useCallback(() => {
     if (isAutoReading) {
-       clearAutoReadIntervals();
-       playWordAndAdvance();
+      stopAutoReading();
+      return;
     }
-  }, [currentWordIndex, isAutoReading, playWordAndAdvance, clearAutoReadIntervals]);
+    if (!currentWord) {
+      toast.info('Chưa có thẻ để đọc.');
+      return;
+    }
+    playbackGuard.current.start();
+    setIsAutoReading(true);
+  }, [currentWord, isAutoReading, stopAutoReading]);
 
   useEffect(() => {
-    return () => clearAutoReadIntervals();
-  }, [clearAutoReadIntervals]);
+    if (sheets.length === 0) {
+      if (activeSheetIndex !== 0) setStoredActiveSheetIndex(0);
+    } else if (activeSheetIndex < -1 || activeSheetIndex >= sheets.length) {
+      setStoredActiveSheetIndex(0);
+      setStoredCurrentWordIndex(0);
+    }
+  }, [activeSheetIndex, setStoredActiveSheetIndex, setStoredCurrentWordIndex, sheets]);
+
+  useEffect(() => {
+    if (totalWords === 0 && currentWordIndex !== 0) setStoredCurrentWordIndex(0);
+    else if (currentWordIndex >= totalWords && totalWords > 0) setStoredCurrentWordIndex(totalWords - 1);
+  }, [currentWordIndex, setStoredCurrentWordIndex, totalWords]);
+
+  useEffect(() => {
+    if (!isAutoReading) return;
+    const guard = playbackGuard.current;
+    const token = guard.beginPlayback();
+    clearPlaybackResources();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    void playWordAndAdvance(token, controller.signal);
+    return () => {
+      guard.beginPlayback();
+      clearPlaybackResources(false);
+    };
+  }, [clearPlaybackResources, currentWordIndex, isAutoReading, playWordAndAdvance]);
+
+  useEffect(() => () => {
+    playbackGuard.current.stop();
+    clearPlaybackResources();
+  }, [clearPlaybackResources]);
 
   return (
-    <FlashcardContext.Provider
-      value={{
-        sheets,
-        activeSheetIndex,
-        currentWordIndex,
-        showVietnameseFirst,
-        currentWord,
-        totalWords,
-        activeSheetName,
-        setSheets,
-        setActiveSheetIndex: handleSetActiveSheetIndex,
-        setCurrentWordIndex,
-        setShowVietnameseFirst,
-        nextWord,
-        prevWord,
-        shuffleWords,
-        addWord,
-        searchTerm,
-        setSearchTerm,
-        hasNext,
-        hasPrev,
-        isAutoReading,
-        flashcardBreakTime,
-        setFlashcardBreakTime,
-        toggleAutoRead,
-        stopAutoReading,
-      }}
-    >
+    <FlashcardContext.Provider value={{
+      sheets,
+      activeSheetIndex,
+      currentWordIndex,
+      showVietnameseFirst,
+      currentWord,
+      totalWords,
+      activeSheetName,
+      setSheets,
+      setActiveSheetIndex,
+      setCurrentWordIndex,
+      setShowVietnameseFirst,
+      nextWord,
+      prevWord,
+      shuffleWords,
+      addWord,
+      searchTerm,
+      setSearchTerm,
+      hasNext,
+      hasPrev,
+      isAutoReading,
+      flashcardBreakTime,
+      setFlashcardBreakTime,
+      toggleAutoRead,
+      stopAutoReading,
+    }}>
       {children}
     </FlashcardContext.Provider>
   );
-}
-
-// ─── Hook ───────────────────────────────────────────────────────────
-export function useFlashcard() {
-  const ctx = useContext(FlashcardContext);
-  if (!ctx) {
-    throw new Error('useFlashcard must be used within a FlashcardProvider');
-  }
-  return ctx;
 }

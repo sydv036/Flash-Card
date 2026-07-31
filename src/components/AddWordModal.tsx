@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useFlashcard } from '@/context/FlashcardContext';
+import { useFlashcard } from '@/context/flashcard-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,12 +22,13 @@ import {
 import { toast } from 'sonner';
 
 export function AddWordModal() {
-  const { sheets, addWord, setActiveSheetIndex } = useFlashcard();
+  const { sheets, activeSheetIndex, addWord, setActiveSheetIndex } = useFlashcard();
   const [isOpen, setIsOpen] = useState(false);
 
   // Form state
   const [english, setEnglish] = useState('');
   const [wordType, setWordType] = useState('');
+  const [phonetic, setPhonetic] = useState('');
   const [translation, setTranslation] = useState('');
   const [exampleEnglish, setExampleEnglish] = useState('');
   const [exampleVietnamese, setExampleVietnamese] = useState('');
@@ -38,8 +39,9 @@ export function AddWordModal() {
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
     if (open) {
-      if (sheets.length > 0 && !selectedSheet) {
-        setSelectedSheet(sheets[0].name);
+      if (sheets.length > 0) {
+        setSelectedSheet(sheets[activeSheetIndex]?.name || sheets[0].name);
+        setNewSheetName('');
       } else if (sheets.length === 0) {
         setSelectedSheet('Buổi 1');
       }
@@ -65,13 +67,15 @@ export function AddWordModal() {
     addWord(sheetName, {
       english: english.trim(),
       wordType: wordType.trim(),
+      phonetic: phonetic.trim(),
       translation: translation.trim(),
       exampleEnglish: exampleEnglish.trim(),
       exampleVietnamese: exampleVietnamese.trim(),
     });
 
     // Automatically set the active sheet to the one we just added to
-    const targetSheetIndex = sheets.findIndex((s) => s.name === sheetName);
+    const normalizedSheetName = sheetName.toLocaleLowerCase('vi');
+    const targetSheetIndex = sheets.findIndex((sheet) => sheet.name.trim().toLocaleLowerCase('vi') === normalizedSheetName);
     if (targetSheetIndex >= 0) {
       setActiveSheetIndex(targetSheetIndex);
     } else {
@@ -84,6 +88,7 @@ export function AddWordModal() {
     // Reset and close
     setEnglish('');
     setWordType('');
+    setPhonetic('');
     setTranslation('');
     setExampleEnglish('');
     setExampleVietnamese('');
@@ -177,12 +182,25 @@ export function AddWordModal() {
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="wordType" className="text-right">
-              Phiên âm
+              Loại từ
             </Label>
             <Input
               id="wordType"
               value={wordType}
               onChange={(e) => setWordType(e.target.value)}
+              className="col-span-3"
+              placeholder="Ví dụ: verb"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="phonetic" className="text-right">
+              Phiên âm
+            </Label>
+            <Input
+              id="phonetic"
+              value={phonetic}
+              onChange={(e) => setPhonetic(e.target.value)}
               className="col-span-3"
               placeholder="Ví dụ: /əˈdʒʌst/"
             />

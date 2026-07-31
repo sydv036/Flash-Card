@@ -1,4 +1,4 @@
-import { useFlashcard } from '@/context/FlashcardContext';
+import { useFlashcard } from '@/context/flashcard-context';
 import {
   Select,
   SelectContent,
