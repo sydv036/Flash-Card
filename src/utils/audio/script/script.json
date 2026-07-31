@@ -30,5 +30,13 @@
     "title": "TOEIC Part 1 - Buổi 5",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-6",
+    "lessonName": "Buổi 6",
+    "title": "TOEIC Part 1 - Buổi 6",
+    "is_display": true,
+    "items": []
   }
 ]
