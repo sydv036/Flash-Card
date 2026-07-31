@@ -7040,5 +7040,13 @@
     "title": "TOEIC Part 2 - Buổi 23",
     "is_display": true,
     "items": []
+  },
+  {
+    "part": 3,
+    "lessonId": "test",
+    "lessonName": "Test",
+    "title": "TOEIC Part 3 - Test",
+    "is_display": true,
+    "items": []
   }
 ]
