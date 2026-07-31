@@ -3405,12 +3405,931 @@
     ]
   },
   {
-    "part": 1,
     "lessonId": "buoi-13",
     "lessonName": "Buổi 13",
+    "part": 1,
     "title": "TOEIC Part 1 - Buổi 13",
     "is_display": true,
-    "items": []
+    "items": [
+      {
+        "id": 1,
+        "image": "1.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Recording equipment is being moved onto a stage.",
+            "vi": "Thiết bị ghi âm đang được chuyển lên sân khấu."
+          },
+          {
+            "key": "B",
+            "en": "Some women are practicing their instruments.",
+            "vi": "Một số phụ nữ đang luyện tập nhạc cụ của họ."
+          },
+          {
+            "key": "C",
+            "en": "Chairs are being arranged in a classroom.",
+            "vi": "Ghế đang được sắp xếp trong lớp học."
+          },
+          {
+            "key": "D",
+            "en": "One of the musicians is turning a page.",
+            "vi": "Một trong những nhạc sĩ đang lật một trang giấy."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 2,
+        "image": "2.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Some performers are on a stage.",
+            "vi": "Một số nghệ sĩ biểu diễn đang ở trên sân khấu."
+          },
+          {
+            "key": "B",
+            "en": "An audience is seated in rows.",
+            "vi": "Khán giả đang ngồi theo hàng."
+          },
+          {
+            "key": "C",
+            "en": "Tickets are being collected.",
+            "vi": "Vé đang được thu thập."
+          },
+          {
+            "key": "D",
+            "en": "People are exiting a theater.",
+            "vi": "Mọi người đang rời khỏi rạp hát."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 3,
+        "image": "3.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Spectators have gathered along the street.",
+            "vi": "Khán giả đã tụ tập dọc theo con phố."
+          },
+          {
+            "key": "B",
+            "en": "A sporting event is taking place in a stadium.",
+            "vi": "Một sự kiện thể thao đang diễn ra trong sân vận động."
+          },
+          {
+            "key": "C",
+            "en": "The road has been blocked by some tires.",
+            "vi": "Con đường đã bị chặn bởi một số lốp xe."
+          },
+          {
+            "key": "D",
+            "en": "Riders are getting on their bicycles.",
+            "vi": "Những người lái xe đang lên xe đạp của họ."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 4,
+        "image": "4.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A band is filing off a stage.",
+            "vi": "Một ban nhạc đang lần lượt rời khỏi sân khấu."
+          },
+          {
+            "key": "B",
+            "en": "People are performing under a tent.",
+            "vi": "Mọi người đang biểu diễn dưới một chiếc lều."
+          },
+          {
+            "key": "C",
+            "en": "An audience is clapping for some musicians.",
+            "vi": "Khán giả đang vỗ tay cho một số nhạc sĩ."
+          },
+          {
+            "key": "D",
+            "en": "Women are singing next to a piano.",
+            "vi": "Những người phụ nữ đang hát bên cạnh một cây đàn piano."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 5,
+        "image": "5.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A man is unpacking a suitcase.",
+            "vi": "Một người đàn ông đang mở vali."
+          },
+          {
+            "key": "B",
+            "en": "A musician is playing outdoors.",
+            "vi": "Một nhạc sĩ đang chơi nhạc ngoài trời."
+          },
+          {
+            "key": "C",
+            "en": "Some park benches are empty.",
+            "vi": "Một số ghế dài trong công viên đang trống."
+          },
+          {
+            "key": "D",
+            "en": "Some people are setting up a tent.",
+            "vi": "Một số người đang dựng một chiếc lều."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 6,
+        "image": "6.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "They’re waiting in line together.",
+            "vi": "Họ đang cùng nhau xếp hàng."
+          },
+          {
+            "key": "B",
+            "en": "They’re playing a game outdoors.",
+            "vi": "Họ đang chơi một trò chơi ngoài trời."
+          },
+          {
+            "key": "C",
+            "en": "They’re sitting at the dentist’s office.",
+            "vi": "Họ đang ngồi tại phòng khám nha sĩ."
+          },
+          {
+            "key": "D",
+            "en": "They’re opening the gate.",
+            "vi": "Họ đang mở cổng."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 7,
+        "image": "7.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The men are adjusting microphones.",
+            "vi": "Những người đàn ông đang điều chỉnh micro."
+          },
+          {
+            "key": "B",
+            "en": "The men are playing music together.",
+            "vi": "Những người đàn ông đang chơi nhạc cùng nhau."
+          },
+          {
+            "key": "C",
+            "en": "The men are listening to a lecture.",
+            "vi": "Những người đàn ông đang nghe một bài giảng."
+          },
+          {
+            "key": "D",
+            "en": "The men are working in the garden.",
+            "vi": "Những người đàn ông đang làm việc trong vườn."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 8,
+        "image": "8.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "People are standing behind a railing.",
+            "vi": "Mọi người đang đứng sau một lan can."
+          },
+          {
+            "key": "B",
+            "en": "People are putting bricks in a pile.",
+            "vi": "Mọi người đang xếp gạch thành một đống."
+          },
+          {
+            "key": "C",
+            "en": "People are crossing the street at an intersection.",
+            "vi": "Mọi người đang băng qua đường tại một giao lộ."
+          },
+          {
+            "key": "D",
+            "en": "People are waiting under a bridge.",
+            "vi": "Mọi người đang chờ dưới một cây cầu."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 9,
+        "image": "9.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Some chairs are arranged in a circle.",
+            "vi": "Một số chiếc ghế được sắp xếp thành một vòng tròn."
+          },
+          {
+            "key": "B",
+            "en": "Some stairs are being cleaned.",
+            "vi": "Một số bậc cầu thang đang được lau dọn."
+          },
+          {
+            "key": "C",
+            "en": "A roof is being repaired.",
+            "vi": "Một mái nhà đang được sửa chữa."
+          },
+          {
+            "key": "D",
+            "en": "A tree is being trimmed.",
+            "vi": "Một cái cây đang được tỉa bớt cành."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 10,
+        "image": "10.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Some people are riding bicycles.",
+            "vi": "Một số người đang đạp xe đạp."
+          },
+          {
+            "key": "B",
+            "en": "Some people are standing in a group.",
+            "vi": "Một số người đang đứng thành một nhóm."
+          },
+          {
+            "key": "C",
+            "en": "Some people are seated on a lawn.",
+            "vi": "Một số người đang ngồi trên thảm cỏ."
+          },
+          {
+            "key": "D",
+            "en": "Some people are gathered near a table.",
+            "vi": "Một số người đang tụ tập gần một chiếc bàn."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 11,
+        "image": "11.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "They're sitting outdoors.",
+            "vi": "Họ đang ngồi ngoài trời."
+          },
+          {
+            "key": "B",
+            "en": "They're watering a garden.",
+            "vi": "Họ đang tưới vườn."
+          },
+          {
+            "key": "C",
+            "en": "They're cutting the grass.",
+            "vi": "Họ đang cắt cỏ."
+          },
+          {
+            "key": "D",
+            "en": "They're moving some furniture.",
+            "vi": "Họ đang di chuyển một số đồ nội thất."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 12,
+        "image": "12.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Some people are sitting outside.",
+            "vi": "Một số người đang ngồi bên ngoài."
+          },
+          {
+            "key": "B",
+            "en": "Some people are watching a movie.",
+            "vi": "Một số người đang xem một bộ phim."
+          },
+          {
+            "key": "C",
+            "en": "Some people are cutting the grass.",
+            "vi": "Một số người đang cắt cỏ."
+          },
+          {
+            "key": "D",
+            "en": "Some people are planting trees.",
+            "vi": "Một số người đang trồng cây."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 13,
+        "image": "13.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "They’re spreading out a net.",
+            "vi": "Họ đang giăng một tấm lưới."
+          },
+          {
+            "key": "B",
+            "en": "They're tying a boat to the dock.",
+            "vi": "Họ đang buộc một chiếc thuyền vào bến."
+          },
+          {
+            "key": "C",
+            "en": "They're fishing from the side of a boat.",
+            "vi": "Họ đang câu cá bên mạn thuyền."
+          },
+          {
+            "key": "D",
+            "en": "They're folding up a tent.",
+            "vi": "Họ đang gập một chiếc lều."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 14,
+        "image": "14.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A man is diving off a boat.",
+            "vi": "Một người đàn ông đang lặn xuống từ một chiếc thuyền."
+          },
+          {
+            "key": "B",
+            "en": "Some boats are sailing on the water.",
+            "vi": "Một số con thuyền đang đi trên mặt nước."
+          },
+          {
+            "key": "C",
+            "en": "Some people are fishing from a dock.",
+            "vi": "Một số người đang câu cá từ một bến tàu."
+          },
+          {
+            "key": "D",
+            "en": "People are watching a race from the shore.",
+            "vi": "Mọi người đang xem một cuộc đua từ trên bờ."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 15,
+        "image": "15.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "Diners are feeding some seagulls.",
+            "vi": "Thực khách đang cho một số con mòng biển ăn."
+          },
+          {
+            "key": "B",
+            "en": "They're pulling their chairs up to the table.",
+            "vi": "Họ đang kéo ghế của mình lại gần bàn."
+          },
+          {
+            "key": "C",
+            "en": "Some people are eating near the water.",
+            "vi": "Một số người đang ăn gần mặt nước."
+          },
+          {
+            "key": "D",
+            "en": "Some food is being brought to the diners.",
+            "vi": "Một số thức ăn đang được mang ra cho thực khách."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 16,
+        "image": "16.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "He's walking along the shore.",
+            "vi": "Anh ấy đang đi bộ dọc theo bờ biển."
+          },
+          {
+            "key": "B",
+            "en": "He's swimming in the sea.",
+            "vi": "Anh ấy đang bơi dưới biển."
+          },
+          {
+            "key": "C",
+            "en": "He's holding a fishing pole.",
+            "vi": "Anh ấy đang cầm một chiếc cần câu."
+          },
+          {
+            "key": "D",
+            "en": "He's getting into a boat.",
+            "vi": "Anh ấy đang lên một chiếc thuyền."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 17,
+        "image": "17.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "They're driving along the shoreline.",
+            "vi": "Họ đang lái xe dọc theo đường bờ biển."
+          },
+          {
+            "key": "B",
+            "en": "They're standing near a railing.",
+            "vi": "Họ đang đứng gần một lan can."
+          },
+          {
+            "key": "C",
+            "en": "They're handing out menus.",
+            "vi": "Họ đang đưa thực đơn."
+          },
+          {
+            "key": "D",
+            "en": "They're dining at a restaurant.",
+            "vi": "Họ đang dùng bữa tại một nhà hàng."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 18,
+        "image": "18.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The swimmers are in the water.",
+            "vi": "Những người bơi lội đang ở dưới nước."
+          },
+          {
+            "key": "B",
+            "en": "The boats are out to sea.",
+            "vi": "Những con thuyền đang ở ngoài khơi."
+          },
+          {
+            "key": "C",
+            "en": "The pedestrians are crossing the bridge.",
+            "vi": "Người đi bộ đang băng qua cầu."
+          },
+          {
+            "key": "D",
+            "en": "Some people are standing on the shore.",
+            "vi": "Một số người đang đứng trên bờ."
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 19,
+        "image": "19.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "He’s wearing a tool belt",
+            "vi": "Anh ấy đang đeo một đai dụng cụ"
+          },
+          {
+            "key": "B",
+            "en": "He’s going into a house",
+            "vi": "Anh ấy đang đi vào một ngôi nhà"
+          },
+          {
+            "key": "C",
+            "en": "He’s carrying some wood",
+            "vi": "Anh ấy đang mang một ít gỗ"
+          },
+          {
+            "key": "D",
+            "en": "He’s taking off his hat",
+            "vi": "Anh ấy đang cởi mũ của mình"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 20,
+        "image": "20.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "He’s turning on a machine",
+            "vi": "Anh ấy đang bật một chiếc máy"
+          },
+          {
+            "key": "B",
+            "en": "He’s rolling up his sleeves",
+            "vi": "Anh ấy đang xắn tay áo của mình"
+          },
+          {
+            "key": "C",
+            "en": "He’s holding an electrical cord",
+            "vi": "Anh ấy đang cầm một sợi dây điện"
+          },
+          {
+            "key": "D",
+            "en": "He’s folding his jacket",
+            "vi": "Anh ấy đang gấp áo khoác của mình"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 21,
+        "image": "21.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A presentation is being made",
+            "vi": "Một bài thuyết trình đang được trình bày"
+          },
+          {
+            "key": "B",
+            "en": "They’re painting the walls",
+            "vi": "Họ đang sơn những bức tường"
+          },
+          {
+            "key": "C",
+            "en": "One man is holding the back of a chair",
+            "vi": "Một người đàn ông đang cầm vào lưng của một chiếc ghế"
+          },
+          {
+            "key": "D",
+            "en": "Cabinets are being installed",
+            "vi": "Những chiếc tủ đang được lắp đặt"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 22,
+        "image": "22.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A man is painting a picture",
+            "vi": "Một người đàn ông đang vẽ một bức tranh"
+          },
+          {
+            "key": "B",
+            "en": "A man is paying for a purchase",
+            "vi": "Một người đàn ông đang thanh toán cho một món hàng"
+          },
+          {
+            "key": "C",
+            "en": "A man is hanging up a photograph",
+            "vi": "Một người đàn ông đang treo một bức ảnh"
+          },
+          {
+            "key": "D",
+            "en": "A man is adjusting a camara",
+            "vi": "Một người đàn ông đang điều chỉnh một chiếc máy ảnh"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 23,
+        "image": "23.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The man is fixing his watch",
+            "vi": "Người đàn ông đang sửa đồng hồ của mình"
+          },
+          {
+            "key": "B",
+            "en": "The bicycle is lying on the ground",
+            "vi": "Chiếc xe đạp đang nằm trên mặt đất"
+          },
+          {
+            "key": "C",
+            "en": "The man is cleaning the shop",
+            "vi": "Người đàn ông đang dọn dẹp cửa hàng"
+          },
+          {
+            "key": "D",
+            "en": "The bicycle is in a repair shop",
+            "vi": "Chiếc xe đạp đang ở trong một cửa hàng sửa chữa"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 24,
+        "image": "24.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The woman is getting a cup of coffee",
+            "vi": "Người phụ nữ đang lấy một tách cà phê"
+          },
+          {
+            "key": "B",
+            "en": "The woman is sitting near the machine",
+            "vi": "Người phụ nữ đang ngồi gần chiếc máy"
+          },
+          {
+            "key": "C",
+            "en": "The woman is picking up a document",
+            "vi": "Người phụ nữ đang lấy một xấp tài liệu"
+          },
+          {
+            "key": "D",
+            "en": "The woman is unplugging the machine",
+            "vi": "Người phụ nữ đang rút phích cắm chiếc máy"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 25,
+        "image": "25.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "He’s reaching into a bookcase",
+            "vi": "Anh ấy đang với tay vào một kệ sách"
+          },
+          {
+            "key": "B",
+            "en": "He’s lifting some furniture",
+            "vi": "Anh ấy đang nhấc một số đồ nội thất"
+          },
+          {
+            "key": "C",
+            "en": "He’s adjusting a wire",
+            "vi": "Anh ấy đang điều chỉnh một sợi dây điện"
+          },
+          {
+            "key": "D",
+            "en": "He’s cutting a hole in a piece of wood",
+            "vi": "Anh ấy đang khoét một cái lỗ trên một miếng gỗ"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 26,
+        "image": "26.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "He’s moving baggage down the steps",
+            "vi": "Anh ấy đang chuyển hành lý xuống các bậc thang"
+          },
+          {
+            "key": "B",
+            "en": "He’s carrying suitcases in both hands",
+            "vi": "Anh ấy đang xách vali bằng cả hai tay"
+          },
+          {
+            "key": "C",
+            "en": "He’s taking suitcases from a vehicle",
+            "vi": "Anh ấy đang lấy những chiếc vali từ một phương tiện"
+          },
+          {
+            "key": "D",
+            "en": "He’s standing next to a baggage trolley",
+            "vi": "Anh ấy đang đứng cạnh một chiếc xe đẩy hành lý"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 27,
+        "image": "27.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The boat is full of people",
+            "vi": "Chiếc thuyền đầy người"
+          },
+          {
+            "key": "B",
+            "en": "The boat is tied at the dock",
+            "vi": "Chiếc thuyền được buộc tại bến"
+          },
+          {
+            "key": "C",
+            "en": "Some boats are passing each other on the water",
+            "vi": "Một số con thuyền đang đi lướt qua nhau trên mặt nước"
+          },
+          {
+            "key": "D",
+            "en": "There are many cars next to the river",
+            "vi": "Có rất nhiều ô tô bên cạnh con sông"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 28,
+        "image": "28.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The office is stocked with supplies",
+            "vi": "Văn phòng chứa đầy các vật dụng"
+          },
+          {
+            "key": "B",
+            "en": "Someone is working at the computer",
+            "vi": "Ai đó đang làm việc tại máy tính"
+          },
+          {
+            "key": "C",
+            "en": "Supplies are being unloaded in the warehouse",
+            "vi": "Các vật dụng đang được dỡ xuống trong kho"
+          },
+          {
+            "key": "D",
+            "en": "The shelves in the office are empty",
+            "vi": "Các kệ trong văn phòng đang trống rỗng"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 29,
+        "image": "29.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A man is building a boat by the water",
+            "vi": "Một người đàn ông đang đóng một con thuyền bên bờ nước"
+          },
+          {
+            "key": "B",
+            "en": "A man is tying up a boat at the dock",
+            "vi": "Một người đàn ông đang buộc một con thuyền tại bến"
+          },
+          {
+            "key": "C",
+            "en": "The boats have been caught in a storm",
+            "vi": "Những con thuyền đã bị mắc kẹt trong một cơn bão"
+          },
+          {
+            "key": "D",
+            "en": "The boats have been taken out on the water",
+            "vi": "Những con thuyền đã được đưa ra mặt nước"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 30,
+        "image": "30.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "A dining tray has been placed on a counter",
+            "vi": "Một khay thức ăn đã được đặt trên quầy"
+          },
+          {
+            "key": "B",
+            "en": "Decorative lamps have been fastened to the ceiling",
+            "vi": "Những chiếc đèn trang trí đã được gắn chặt vào trần nhà"
+          },
+          {
+            "key": "C",
+            "en": "A large painting has been hung over a desk",
+            "vi": "Một bức tranh lớn đã được treo phía trên một chiếc bàn làm việc"
+          },
+          {
+            "key": "D",
+            "en": "Armchairs are located on both sides of a fireplace",
+            "vi": "Những chiếc ghế bành được đặt ở cả hai bên của một lò sưởi"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 31,
+        "image": "31.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The stairs have been carpeted",
+            "vi": "Các bậc cầu thang đã được trải thảm"
+          },
+          {
+            "key": "B",
+            "en": "The woman is going upstairs",
+            "vi": "Người phụ nữ đang đi lên lầu"
+          },
+          {
+            "key": "C",
+            "en": "The railing has been removed",
+            "vi": "Lan can đã bị dỡ bỏ"
+          },
+          {
+            "key": "D",
+            "en": "The window is being cleaned",
+            "vi": "Cửa sổ đang được lau dọn"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 32,
+        "image": "32.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The books have been arranged in piles",
+            "vi": "Những cuốn sách đã được sắp xếp thành các đống"
+          },
+          {
+            "key": "B",
+            "en": "The bookshelves have fallen over",
+            "vi": "Những chiếc kệ sách đã bị đổ xuống"
+          },
+          {
+            "key": "C",
+            "en": "The cart has been turned on its side",
+            "vi": "Chiếc xe đẩy đã bị lật nghiêng"
+          },
+          {
+            "key": "D",
+            "en": "the files have been stacked on the bookshelf",
+            "vi": "Các hồ sơ đã được xếp chồng lên kệ sách"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 33,
+        "image": "33.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The shopkeeper is lining up some goods for sale",
+            "vi": "Chủ cửa hàng đang xếp một số hàng hóa để bán"
+          },
+          {
+            "key": "B",
+            "en": "The man is holding some reading material",
+            "vi": "Người đàn ông đang cầm một số tài liệu để đọc"
+          },
+          {
+            "key": "C",
+            "en": "The shopper is picking out clothes from the rack.",
+            "vi": "Người mua hàng đang chọn quần áo từ giá treo."
+          },
+          {
+            "key": "D",
+            "en": "The man’s folding the merchandise on the table",
+            "vi": "Người đàn ông đang gấp hàng hóa trên bàn"
+          }
+        ],
+        "correctAnswer": "A"
+      },
+      {
+        "id": 34,
+        "image": "34.png",
+        "answers": [
+          {
+            "key": "A",
+            "en": "The pins have been pressed into the board",
+            "vi": "Những chiếc đinh ghim đã được ấn vào bảng"
+          },
+          {
+            "key": "B",
+            "en": "The cups have been left to dry",
+            "vi": "Những chiếc ly đã được để cho khô"
+          },
+          {
+            "key": "C",
+            "en": "The closet is full of boxes",
+            "vi": "Tủ quần áo chứa đầy những chiếc hộp"
+          },
+          {
+            "key": "D",
+            "en": "Pencils have been arranged in containers",
+            "vi": "Bút chì đã được sắp xếp trong các hộp đựng"
+          }
+        ],
+        "correctAnswer": "A"
+      }
+    ]
   },
   {
     "part": 1,
