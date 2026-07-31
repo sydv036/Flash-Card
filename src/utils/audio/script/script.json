@@ -7018,5 +7018,13 @@
         "correctAnswer": "A"
       }
     ]
+  },
+  {
+    "part": 1,
+    "lessonId": "buoi-111",
+    "lessonName": "Buổi 111",
+    "title": "TOEIC Part 1 - Buổi 111",
+    "is_display": true,
+    "items": []
   }
 ]
